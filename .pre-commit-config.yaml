@@ -21,3 +21,23 @@ repos:
     hooks:
       - id: hadolint
         files: ^(Dockerfile|.*Dockerfile|.*\.Dockerfile)$
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.45.0
+    hooks:
+    - id: markdownlint
+      args:
+      - --fix
+      verbose: true
+      entry: bash -c 'markdownlint "$@" || true' --
+
+  # custom hook for type checking
+  - repo: local
+    hooks:
+      - id: typecheck
+        name: Type checking
+        entry: make typecheck
+        language: system
+        files: ^(link-api/.*)$
+        pass_filenames: false
+        stages: [commit]
