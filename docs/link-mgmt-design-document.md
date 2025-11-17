@@ -30,6 +30,7 @@ A distributed link organization system that allows users to save, tag, and searc
 **Base URL**: `https://api.links.yourdomain.com`
 
 **Technology Stack**:
+
 - FastAPI 0.104+
 - SQLAlchemy 2.0 (async)
 - PostgreSQL 15+
@@ -39,6 +40,7 @@ A distributed link organization system that allows users to save, tag, and searc
 ### 2. Rust CLI Client
 
 **Technology Stack**:
+
 - Clap for argument parsing
 - Reqwest for HTTP requests
 - Tokio for async runtime
@@ -128,7 +130,9 @@ CREATE INDEX idx_link_tags_tag_id ON link_tags(tag_id);
 ## API Endpoints
 
 ### Authentication
+
 All endpoints require API key authentication via header:
+
 ```
 X-API-Key: <user_api_key>
 ```
@@ -136,7 +140,9 @@ X-API-Key: <user_api_key>
 ### Link Management
 
 #### POST /api/links
+
 Create a new link
+
 ```json
 Request:
 {
@@ -163,7 +169,9 @@ Response:
 ```
 
 #### GET /api/links
+
 List links with filtering and pagination
+
 ```json
 Parameters:
 - page (int): Page number, default 1
@@ -185,21 +193,27 @@ Response:
 ```
 
 #### GET /api/links/{id}
+
 Get single link with full metadata
 
 #### PUT /api/links/{id}
+
 Update link properties
 
 #### DELETE /api/links/{id}
+
 Delete a link
 
 #### POST /api/links/{id}/archive
+
 Archive/unarchive a link
 
 ### Tag Management
 
 #### GET /api/tags
+
 List all user tags with usage counts
+
 ```json
 Response:
 {
@@ -215,18 +229,23 @@ Response:
 ```
 
 #### POST /api/tags
+
 Create a new tag
 
 #### PUT /api/tags/{id}
+
 Update tag properties
 
 #### DELETE /api/tags/{id}
+
 Delete tag (removes from all links)
 
 ### Search & Analytics
 
 #### GET /api/search
+
 Advanced search with multiple filters
+
 ```json
 Parameters:
 - q (str): Query string supporting operators
@@ -237,7 +256,9 @@ Parameters:
 ```
 
 #### GET /api/stats
+
 User statistics
+
 ```json
 Response:
 {
@@ -258,7 +279,9 @@ Response:
 ### Import/Export
 
 #### POST /api/import
+
 Import links from various formats
+
 ```json
 Request:
 {
@@ -269,7 +292,9 @@ Request:
 ```
 
 #### GET /api/export
+
 Export all links
+
 ```
 Parameters:
 - format: netscape|json|csv|markdown
@@ -341,6 +366,7 @@ path = "~/.cache/lnk"
 ## Rust CLI Implementation Details
 
 ### Project Structure
+
 ```
 lnk-cli/
 ├── Cargo.toml
@@ -367,6 +393,7 @@ lnk-cli/
 ```
 
 ### Key Dependencies (Cargo.toml)
+
 ```toml
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
@@ -391,6 +418,7 @@ tabled = "0.15"     # Table formatting
 ## FastAPI Implementation Details
 
 ### Project Structure
+
 ```
 link-api/
 ├── pyproject.toml
@@ -449,6 +477,7 @@ Using Celery for async processing:
 ## Deployment Strategy
 
 ### Development
+
 ```bash
 # FastAPI
 docker-compose up -d postgres
@@ -461,6 +490,7 @@ cargo run -- save https://example.com
 ### Production
 
 **FastAPI Backend**:
+
 ```yaml
 # docker-compose.yml
 services:
@@ -483,6 +513,7 @@ services:
 ```
 
 **Rust CLI Distribution**:
+
 ```bash
 # Build for multiple platforms
 cargo build --release --target x86_64-unknown-linux-musl
@@ -495,6 +526,7 @@ cargo build --release --target aarch64-apple-darwin
 ```
 
 ### Phase 4 (Months 7-12)
+
 - Team workspaces
 - Advanced analytics
 - API for third-party integrations
@@ -504,24 +536,28 @@ cargo build --release --target aarch64-apple-darwin
 ## Development Timeline
 
 ### Week 1-2: Foundation
+
 - [ ] Setup FastAPI project structure
 - [ ] Create database schema and migrations
 - [ ] Implement basic CRUD endpoints
 - [ ] Setup Docker development environment
 
 ### Week 3-4: Rust CLI
+
 - [ ] Create CLI project structure
 - [ ] Implement authentication flow
 - [ ] Add basic save/list/search commands
 - [ ] Setup credential storage
 
 ### Week 5-6: Enhanced Features
+
 - [ ] Add metadata extraction service
 - [ ] Implement full-text search
 - [ ] Add tag management
 - [ ] Create import/export functionality
 
 ### Week 7-8: Polish & Deploy
+
 - [ ] Add comprehensive tests
 - [ ] Setup CI/CD pipeline
 - [ ] Deploy to production

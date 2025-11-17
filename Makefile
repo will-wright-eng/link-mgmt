@@ -19,7 +19,10 @@ logs: ## Follow the logs
 	docker compose logs -f
 
 typecheck: ## Run type checks
-	cd link-api && uv run ty
+	cd link-api && uv run ty check
+
+typecheck-precommit: ## Run type checks
+	cd link-api && uv run ty check
 
 clean: ## Clean up
 	find . -type d -name ".venv" -exec rm -rf {} +

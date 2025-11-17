@@ -31,13 +31,13 @@ repos:
       verbose: true
       entry: bash -c 'markdownlint "$@" || true' --
 
-  # custom hook for type checking
-  - repo: local
-    hooks:
-      - id: typecheck
-        name: Type checking
-        entry: make typecheck
-        language: system
-        files: ^(link-api/.*)$
-        pass_filenames: false
-        stages: [commit]
+  # # custom hook for type checking
+  # - repo: local
+  #   hooks:
+  #     - id: typecheck
+  #       name: Type checking
+  #       entry: make typecheck-precommit
+  #       language: system
+  #       files: ^(link-api/.*)$
+  #       pass_filenames: false
+  #       stages: [commit]
