@@ -10,27 +10,49 @@ help: ## list make commands
 api: ## Run the API
 	cd link-api && uv run uvicorn app.main:app --reload
 
+# cli commands
+build: ## [cli] Build the CLI (release)
+	cd lnk-cli && cargo build --release
+
+check: ## [cli] Check the CLI code
+	cd lnk-cli && cargo check
+
+test: ## [cli] Run CLI tests
+	cd lnk-cli && cargo test
+
+run: ## [cli] Run the CLI (usage: make run ARGS="save https://example.com")
+	cd lnk-cli && cargo run -- $(ARGS)
+
+install: ## [cli] Install the CLI to ~/.cargo/bin
+	cd lnk-cli && cargo install --path .
+
+fmt: ## [cli] Format Rust code
+	cd lnk-cli && cargo fmt --all
+
+fmt-check: ## [cli] Check Rust code formatting
+	cd lnk-cli && cargo fmt --all -- --check
+
+clippy: ## [cli] Run clippy linter
+	cd lnk-cli && cargo clippy --all-targets --all-features -- -D warnings
+
 # docker commands
-up: ## Start the containers
+up: ## [api] Start the containers
 	docker compose up --build --remove-orphans
 
-run: ## Run the containers
-	docker compose up
-
-down: ## Stop the containers
+down: ## [api] Stop the containers
 	docker compose down
 
-purge: ## Purge the containers
+purge: ## [api] Purge the containers
 	docker compose down -v
 
-logs: ## Follow the logs
+logs: ## [api] Follow the logs
 	docker compose logs -f
 
 # typecheck commands
-typecheck: ## Run type checks
+typecheck: ## [api] Run type checks
 	cd link-api && uv run ty check
 
-typecheck-precommit: ## Run type checks
+typecheck-precommit: ## [api] Run type checks
 	cd link-api && uv run ty check
 
 # utils
@@ -39,6 +61,7 @@ clean: ## Clean up
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -exec rm -f {} +
 	rm -rf .ruff_cache
+	cd lnk-cli && cargo clean
 
 open: ## open api swagger ui
 	open http://localhost:8000

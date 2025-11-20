@@ -31,6 +31,22 @@ repos:
       verbose: true
       entry: bash -c 'markdownlint "$@" || true' --
 
+  # Rust hooks
+  - repo: local
+    hooks:
+      - id: rust-fmt
+        name: rust fmt
+        entry: bash -c 'cd lnk-cli && cargo fmt --all -- --check'
+        language: system
+        files: ^lnk-cli/.*\.rs$
+        pass_filenames: false
+      - id: rust-clippy
+        name: rust clippy
+        entry: bash -c 'cd lnk-cli && cargo clippy --all-targets --all-features -- -D warnings'
+        language: system
+        files: ^lnk-cli/.*\.rs$
+        pass_filenames: false
+
   # # custom hook for type checking
   # - repo: local
   #   hooks:
