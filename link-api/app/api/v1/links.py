@@ -11,7 +11,7 @@ from app.schemas import LinkCreate, LinkRead
 router = APIRouter(prefix="/links", tags=["links"])
 
 
-@router.get("/", response_model=list[LinkRead])
+@router.get("", response_model=list[LinkRead])
 async def list_links(
     db: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[LinkRead]:
@@ -20,7 +20,7 @@ async def list_links(
     return [LinkRead.model_validate(link) for link in links]
 
 
-@router.post("/", response_model=LinkRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=LinkRead, status_code=status.HTTP_201_CREATED)
 async def create_link(
     payload: LinkCreate,
     db: Annotated[AsyncSession, Depends(get_session)],

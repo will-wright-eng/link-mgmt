@@ -20,8 +20,11 @@ check: ## [cli] Check the CLI code
 test: ## [cli] Run CLI tests
 	cd lnk-cli && cargo test
 
-run: ## [cli] Run the CLI (usage: make run ARGS="save https://example.com")
-	cd lnk-cli && cargo run -- $(ARGS)
+add: ## [cli] Add new link
+	cd lnk-cli && cargo run save https://example.com
+
+links: ## [cli] Get list of all links
+	cd lnk-cli && cargo run list
 
 install: ## [cli] Install the CLI to ~/.cargo/bin
 	cd lnk-cli && cargo install --path .
