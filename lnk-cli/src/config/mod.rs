@@ -39,8 +39,8 @@ impl Config {
     }
 
     pub fn get_config_dir() -> Result<PathBuf> {
-        dirs::config_dir()
-            .map(|d| d.join("lnk"))
+        dirs::home_dir()
+            .map(|d| d.join(".config").join("lnk"))
             .context("Failed to determine config directory")
     }
 

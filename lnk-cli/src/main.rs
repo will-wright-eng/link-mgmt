@@ -4,8 +4,10 @@ use clap::Parser;
 mod cli;
 mod client;
 mod config;
-mod display;
-mod utils;
+// TODO: Recreate display module for table formatting
+// mod display;
+// TODO: Recreate utils module for URL validation and utilities
+// mod utils;
 
 use cli::Cli;
 
