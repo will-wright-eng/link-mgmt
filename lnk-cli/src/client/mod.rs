@@ -1,3 +1,3 @@
 pub mod links;
 
-pub use links::LinkClient;
+pub use links::{Link, LinkClient};

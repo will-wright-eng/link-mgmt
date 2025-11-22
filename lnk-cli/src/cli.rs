@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use std::io::IsTerminal;
 
-use crate::client::LinkClient;
+use crate::client::{Link, LinkClient};
 use crate::config::Config;
+use crate::prompts::{prompt_description, prompt_title, prompt_url};
 
 #[derive(Parser)]
 #[command(name = "lnk")]
@@ -20,8 +22,8 @@ pub struct Cli {
 pub enum Commands {
     /// Save a link to the API
     Save {
-        /// URL to save
-        url: String,
+        /// URL to save (optional - if not provided, interactive mode will prompt)
+        url: Option<String>,
 
         /// Optional title for the link
         #[arg(short, long)]
@@ -85,99 +87,189 @@ pub enum ConfigCommands {
 }
 
 impl Cli {
+    fn resolve_api_url(cli_api_url: Option<String>, config: &Config) -> String {
+        cli_api_url
+            .or_else(|| config.api_url.clone())
+            .unwrap_or_else(|| "http://localhost:8000".to_string())
+    }
+
+    fn create_client(api_url: &str, config: &Config) -> Result<LinkClient> {
+        LinkClient::new(api_url, config).context("Failed to create API client")
+    }
+
+    fn display_link_saved(link: &Link) {
+        println!("✓ Link saved successfully!");
+        println!("  ID: {}", link.id);
+        println!("  URL: {}", link.url);
+        if let Some(title) = &link.title {
+            println!("  Title: {}", title);
+        }
+        if let Some(description) = &link.description {
+            println!("  Description: {}", description);
+        }
+        println!("  Created: {}", link.created_at);
+    }
+
+    fn display_link(link: &Link, show_updated: bool) {
+        println!("Link #{}:", link.id);
+        println!("  URL: {}", link.url);
+        if let Some(title) = &link.title {
+            println!("  Title: {}", title);
+        }
+        if let Some(description) = &link.description {
+            println!("  Description: {}", description);
+        }
+        println!("  Created: {}", link.created_at);
+        if show_updated {
+            println!("  Updated: {}", link.updated_at);
+        }
+    }
+
     pub async fn run(self) -> Result<()> {
         let config = Config::load()?;
-        let api_url = self
-            .api_url
-            .or_else(|| config.api_url.clone())
-            .unwrap_or_else(|| "http://localhost:8000".to_string());
+        let api_url = Self::resolve_api_url(self.api_url, &config);
 
         match self.command {
             Commands::Save {
                 url,
                 title,
                 description,
-            } => {
-                let client = LinkClient::new(&api_url, &config)?;
-                let link = client
-                    .create_link(&url, title.as_deref(), description.as_deref())
-                    .await
-                    .context("Failed to create link")?;
-                println!("✓ Link saved successfully!");
-                println!("  ID: {}", link.id);
-                println!("  URL: {}", link.url);
-                if let Some(title) = &link.title {
-                    println!("  Title: {}", title);
-                }
-                if let Some(description) = &link.description {
-                    println!("  Description: {}", description);
-                }
-                println!("  Created: {}", link.created_at);
-            }
-            Commands::List { limit } => {
-                let client = LinkClient::new(&api_url, &config)?;
-                let links = client.list_links().await.context("Failed to list links")?;
+            } => Self::handle_save(api_url, config, url, title, description).await,
+            Commands::List { limit } => Self::handle_list(api_url, config, limit).await,
+            Commands::Get { id } => Self::handle_get(api_url, config, id).await,
+            Commands::Auth(cmd) => Self::handle_auth(config, cmd),
+            Commands::Config(cmd) => Self::handle_config(config, cmd),
+        }
+    }
 
-                let display_links: Vec<_> = links.iter().take(limit.unwrap_or(20)).collect();
-                println!("Found {} link(s):\n", links.len());
-                for link in display_links {
-                    println!("  [{}] {}", link.id, link.url);
-                    if let Some(title) = &link.title {
-                        println!("      Title: {}", title);
-                    }
-                    println!("      Created: {}\n", link.created_at);
+    async fn handle_save(
+        api_url: String,
+        config: Config,
+        url: Option<String>,
+        title: Option<String>,
+        description: Option<String>,
+    ) -> Result<()> {
+        // Check if we're in a non-interactive environment
+        let is_interactive = std::io::stdin().is_terminal();
+
+        // Collect values, prompting for missing ones
+        let final_url = match url {
+            Some(u) => u,
+            None => {
+                if !is_interactive {
+                    anyhow::bail!("URL is required when running in non-interactive mode");
+                }
+                prompt_url().context("Failed to get URL")?
+            }
+        };
+
+        let final_title = match title {
+            Some(t) => Some(t),
+            None => {
+                if is_interactive {
+                    prompt_title().context("Failed to get title")?
+                } else {
+                    None
                 }
             }
-            Commands::Get { id } => {
-                let client = LinkClient::new(&api_url, &config)?;
-                let link = client.get_link(id).await.context("Failed to get link")?;
-                println!("Link #{}:", link.id);
-                println!("  URL: {}", link.url);
-                if let Some(title) = &link.title {
-                    println!("  Title: {}", title);
+        };
+
+        let final_description = match description {
+            Some(d) => Some(d),
+            None => {
+                if is_interactive {
+                    prompt_description().context("Failed to get description")?
+                } else {
+                    None
                 }
-                if let Some(description) = &link.description {
-                    println!("  Description: {}", description);
-                }
-                println!("  Created: {}", link.created_at);
-                println!("  Updated: {}", link.updated_at);
             }
-            Commands::Auth(cmd) => match cmd {
-                AuthCommands::Login { api_key } => {
-                    config.set_api_key(&api_key)?;
-                    println!("✓ API key saved successfully");
-                }
-                AuthCommands::Logout => {
-                    config.remove_api_key()?;
-                    println!("✓ API key removed");
-                }
-                AuthCommands::Status => match config.get_api_key()? {
-                    Some(key) => {
-                        println!("✓ Authenticated");
-                        println!(
-                            "  API key: {}...{}",
-                            &key[..8.min(key.len())],
-                            &key[key.len().saturating_sub(4)..]
-                        );
-                    }
-                    None => {
-                        println!("✗ Not authenticated");
-                        println!("  Run 'lnk auth login --api-key <key>' to authenticate");
-                    }
-                },
-            },
-            Commands::Config(cmd) => match cmd {
-                ConfigCommands::Set { key, value } => {
-                    config.set(&key, &value)?;
-                    println!("✓ Configuration updated: {} = {}", key, value);
-                }
-                ConfigCommands::Get { key } => match config.get(&key)? {
+        };
+
+        let client = Self::create_client(&api_url, &config)?;
+        let link = client
+            .create_link(
+                &final_url,
+                final_title.as_deref(),
+                final_description.as_deref(),
+            )
+            .await
+            .context("Failed to create link")?;
+        Self::display_link_saved(&link);
+        Ok(())
+    }
+
+    async fn handle_list(api_url: String, config: Config, limit: Option<usize>) -> Result<()> {
+        let client = Self::create_client(&api_url, &config)?;
+        let links = client.list_links().await.context("Failed to list links")?;
+
+        let display_links: Vec<_> = links.iter().take(limit.unwrap_or(20)).collect();
+        println!("Found {} link(s):\n", links.len());
+        for link in display_links {
+            println!("  [{}] {}", link.id, link.url);
+            if let Some(title) = &link.title {
+                println!("      Title: {}", title);
+            }
+            println!("      Created: {}\n", link.created_at);
+        }
+        Ok(())
+    }
+
+    async fn handle_get(api_url: String, config: Config, id: u64) -> Result<()> {
+        let client = Self::create_client(&api_url, &config)?;
+        let link = client.get_link(id).await.context("Failed to get link")?;
+        Self::display_link(&link, true);
+        Ok(())
+    }
+
+    fn handle_auth(config: Config, cmd: AuthCommands) -> Result<()> {
+        match cmd {
+            AuthCommands::Login { api_key } => {
+                config.set_api_key(&api_key)?;
+                println!("✓ API key saved successfully");
+                Ok(())
+            }
+            AuthCommands::Logout => {
+                config.remove_api_key()?;
+                println!("✓ API key removed");
+                Ok(())
+            }
+            AuthCommands::Status => Self::handle_auth_status(config),
+        }
+    }
+
+    fn handle_auth_status(config: Config) -> Result<()> {
+        match config.get_api_key()? {
+            Some(key) => {
+                println!("✓ Authenticated");
+                println!(
+                    "  API key: {}...{}",
+                    &key[..8.min(key.len())],
+                    &key[key.len().saturating_sub(4)..]
+                );
+                Ok(())
+            }
+            None => {
+                println!("✗ Not authenticated");
+                println!("  Run 'lnk auth login --api-key <key>' to authenticate");
+                Ok(())
+            }
+        }
+    }
+
+    fn handle_config(config: Config, cmd: ConfigCommands) -> Result<()> {
+        match cmd {
+            ConfigCommands::Set { key, value } => {
+                config.set(&key, &value)?;
+                println!("✓ Configuration updated: {} = {}", key, value);
+                Ok(())
+            }
+            ConfigCommands::Get { key } => {
+                match config.get(&key)? {
                     Some(val) => println!("{}", val),
                     None => println!("Configuration key '{}' not found", key),
-                },
-            },
+                }
+                Ok(())
+            }
         }
-
-        Ok(())
     }
 }

@@ -65,8 +65,6 @@ inquire = "0.7"
 - Cross-platform support
 - Active development and community
 
-**Alternative:** `dialoguer` (simpler, lighter weight) - but `inquire` provides better UX with validation and formatting.
-
 ### 2. Modify CLI Structure
 
 #### 2.1 Make `url` Optional
@@ -157,34 +155,56 @@ pub fn prompt_description() -> Result<Option<String>> {
 
 ### 4. Update Save Command Handler
 
-Modify the `Save` command handler in `src/cli.rs`:
+Modify the `handle_save()` method in `src/cli.rs`. After refactoring, the save command logic is isolated in this method, making it easy to add interactive prompts:
 
 ```rust
 use crate::prompts::{prompt_url, prompt_title, prompt_description};
+use std::io::IsTerminal;
 
-// In the Commands::Save match arm:
-Commands::Save {
-    url,
-    title,
-    description,
-} => {
+async fn handle_save(
+    api_url: String,
+    config: Config,
+    url: Option<String>,
+    title: Option<String>,
+    description: Option<String>,
+) -> Result<()> {
+    // Check if we're in a non-interactive environment
+    let is_interactive = std::io::stdin().is_terminal();
+
     // Collect values, prompting for missing ones
     let final_url = match url {
         Some(u) => u,
-        None => prompt_url().context("Failed to get URL")?,
+        None => {
+            if !is_interactive {
+                anyhow::bail!("URL is required when running in non-interactive mode");
+            }
+            prompt_url().context("Failed to get URL")?
+        },
     };
 
     let final_title = match title {
         Some(t) => Some(t),
-        None => prompt_title().context("Failed to get title")?,
+        None => {
+            if is_interactive {
+                prompt_title().context("Failed to get title")?
+            } else {
+                None
+            }
+        },
     };
 
     let final_description = match description {
         Some(d) => Some(d),
-        None => prompt_description().context("Failed to get description")?,
+        None => {
+            if is_interactive {
+                prompt_description().context("Failed to get description")?
+            } else {
+                None
+            }
+        },
     };
 
-    let client = LinkClient::new(&api_url, &config)?;
+    let client = Self::create_client(&api_url, &config)?;
     let link = client
         .create_link(
             &final_url,
@@ -194,26 +214,26 @@ Commands::Save {
         .await
         .context("Failed to create link")?;
 
-    // ... rest of success output ...
+    Self::display_link_saved(&link);
+    Ok(())
 }
 ```
+
+**Note:** The refactored structure uses:
+
+- `Self::create_client()` - Helper method for client creation
+- `Self::display_link_saved()` - Helper method for displaying saved link
+- The method signature already matches the pattern used by other handlers
 
 ### 5. Handle Non-Interactive Mode
 
-To detect if we're in a non-interactive environment (e.g., CI/CD, scripts), we should check if stdin is a TTY:
+Non-interactive mode detection is now integrated into the `handle_save()` method (see Step 4 above). The check ensures scripts and CI/CD pipelines don't hang waiting for input.
 
-```rust
-use std::io::IsTerminal;
+**Key points:**
 
-// In the Save handler:
-let is_interactive = std::io::stdin().is_terminal();
-
-if url.is_none() && !is_interactive {
-    anyhow::bail!("URL is required when running in non-interactive mode");
-}
-```
-
-This ensures scripts and CI/CD pipelines don't hang waiting for input.
+- Check `std::io::stdin().is_terminal()` to detect interactive mode
+- Only prompt for optional fields (title, description) in interactive mode
+- Require URL in non-interactive mode to prevent hanging
 
 ### 6. Add Module Declaration
 
@@ -228,6 +248,15 @@ mod prompts;  // Add this line
 
 ## Implementation Considerations
 
+### Refactoring Status
+
+✅ **CLI refactoring completed** (see `docs/cli-refactoring-plan.md`):
+
+- Command handlers extracted into separate methods
+- Helper methods for client creation and display formatting
+- `handle_save()` method is isolated and ready for interactive prompts
+- Code is well-organized and maintainable
+
 ### Backward Compatibility
 
 ✅ **Full backward compatibility maintained:**
@@ -235,6 +264,7 @@ mod prompts;  // Add this line
 - All existing command invocations will work exactly as before
 - No breaking changes to the CLI interface
 - Optional prompts only appear when fields are missing
+- Non-interactive mode fully supported (scripts, CI/CD)
 
 ### User Experience Enhancements
 
@@ -248,13 +278,6 @@ mod prompts;  // Add this line
 - Handle Ctrl+C gracefully (inquire does this by default)
 - Provide clear error messages if validation fails
 - Ensure prompts don't block in non-interactive environments
-
-### Testing Considerations
-
-1. **Unit Tests:** Test prompt functions with mocked input
-2. **Integration Tests:** Test full interactive flow
-3. **Non-Interactive Tests:** Ensure existing tests still pass
-4. **TTY Detection:** Test behavior in non-TTY environments
 
 ## Example Usage After Implementation
 
@@ -289,10 +312,15 @@ $ lnk save https://example.com --title "Example" --description "Desc"
 ```
 lnk-cli/
 ├── src/
-│   ├── cli.rs          # Modified: Make url optional, add prompt logic
+│   ├── cli.rs          # Modified:
+│   │                    #   - Make url optional in Save command
+│   │                    #   - Update handle_save() to add prompt logic
+│   │                    #   - Use existing helper methods (create_client, display_link_saved)
 │   ├── main.rs         # Modified: Add prompts module
 │   ├── prompts.rs      # New: Interactive prompt functions
 │   ├── client/
+│   │   ├── mod.rs      # Already exports Link type
+│   │   └── links.rs
 │   ├── config/
 │   └── ...
 ├── Cargo.toml          # Modified: Add inquire dependency
@@ -309,26 +337,6 @@ lnk-cli/
 
 - `url = "2"` - Already in Cargo.toml, used for URL validation
 - `anyhow` - Already used for error handling
-
-## Alternative Approaches Considered
-
-### 1. Using `dialoguer` Instead of `inquire`
-
-- **Pros:** Lighter weight, simpler API
-- **Cons:** Less features, less polished UX
-- **Decision:** Prefer `inquire` for better user experience
-
-### 2. Making All Fields Always Prompt
-
-- **Pros:** Simpler logic
-- **Cons:** Breaks backward compatibility, annoying for power users
-- **Decision:** Only prompt for missing fields
-
-### 3. Separate `save` and `save-interactive` Commands
-
-- **Pros:** Clear separation
-- **Cons:** More commands to maintain, less intuitive
-- **Decision:** Single command with smart prompting
 
 ## Future Enhancements
 
@@ -350,7 +358,3 @@ lnk-cli/
 - [ ] Test non-TTY environment (script/CI mode)
 - [ ] Verify backward compatibility (all existing commands work)
 - [ ] Test error handling (network errors, API errors)
-
-## Migration Notes
-
-No migration needed - this is a backward-compatible enhancement. Existing scripts and workflows will continue to work unchanged.
