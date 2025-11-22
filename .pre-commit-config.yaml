@@ -36,7 +36,7 @@ repos:
     hooks:
       - id: rust-fmt
         name: rust fmt
-        entry: bash -c 'cd lnk-cli && cargo fmt --all -- --check'
+        entry: bash -c 'cd lnk-cli && cargo fmt --all'
         language: system
         files: ^lnk-cli/.*\.rs$
         pass_filenames: false
