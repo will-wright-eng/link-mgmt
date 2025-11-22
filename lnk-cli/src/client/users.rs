@@ -35,35 +35,40 @@ where
     )))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Link {
-    pub id: String,      // UUID as string
-    pub user_id: String, // UUID as string
-    pub url: String,
-    pub title: Option<String>,
-    pub description: Option<String>,
+#[derive(Debug, Clone, Deserialize)]
+pub struct User {
+    pub id: String, // UUID as string
+    pub email: String,
     #[serde(deserialize_with = "deserialize_datetime")]
     pub created_at: DateTime<Utc>,
     #[serde(deserialize_with = "deserialize_datetime")]
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize)]
-struct LinkCreate {
-    url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    description: Option<String>,
+#[derive(Debug, Clone, Deserialize)]
+pub struct UserWithApiKey {
+    pub id: String, // UUID as string
+    pub email: String,
+    pub api_key: String,
+    #[serde(deserialize_with = "deserialize_datetime")]
+    pub created_at: DateTime<Utc>,
+    #[serde(deserialize_with = "deserialize_datetime")]
+    #[allow(dead_code)] // Same as created_at for new users, kept for API response completeness
+    pub updated_at: DateTime<Utc>,
 }
 
-pub struct LinkClient {
+#[derive(Debug, Serialize)]
+struct UserCreate {
+    email: String,
+}
+
+pub struct UserClient {
     client: Client,
     base_url: String,
     api_key: Option<String>,
 }
 
-impl LinkClient {
+impl UserClient {
     pub fn new(base_url: &str, config: &Config) -> Result<Self> {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(30))
@@ -80,7 +85,7 @@ impl LinkClient {
     }
 
     fn build_request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
-        let url = format!("{}/api/links{}", self.base_url, path);
+        let url = format!("{}/api/users{}", self.base_url, path);
         let mut request = self.client.request(method, &url);
 
         if let Some(api_key) = &self.api_key {
@@ -90,16 +95,9 @@ impl LinkClient {
         request
     }
 
-    pub async fn create_link(
-        &self,
-        url: &str,
-        title: Option<&str>,
-        description: Option<&str>,
-    ) -> Result<Link> {
-        let payload = LinkCreate {
-            url: url.to_string(),
-            title: title.map(|s| s.to_string()),
-            description: description.map(|s| s.to_string()),
+    pub async fn create_user(&self, email: &str) -> Result<UserWithApiKey> {
+        let payload = UserCreate {
+            email: email.to_string(),
         };
 
         let response = self
@@ -118,14 +116,14 @@ impl LinkClient {
             anyhow::bail!("API error ({}): {}", status, error_text);
         }
 
-        let link: Link = response.json().await.context("Failed to parse response")?;
+        let user: UserWithApiKey = response.json().await.context("Failed to parse response")?;
 
-        Ok(link)
+        Ok(user)
     }
 
-    pub async fn list_links(&self) -> Result<Vec<Link>> {
+    pub async fn get_me(&self) -> Result<User> {
         let response = self
-            .build_request(reqwest::Method::GET, "")
+            .build_request(reqwest::Method::GET, "/me")
             .send()
             .await
             .context("Failed to send request")?;
@@ -139,32 +137,8 @@ impl LinkClient {
             anyhow::bail!("API error ({}): {}", status, error_text);
         }
 
-        let links: Vec<Link> = response.json().await.context("Failed to parse response")?;
+        let user: User = response.json().await.context("Failed to parse response")?;
 
-        Ok(links)
-    }
-
-    pub async fn get_link(&self, id: &str) -> Result<Link> {
-        let response = self
-            .build_request(reqwest::Method::GET, &format!("/{}", id))
-            .send()
-            .await
-            .context("Failed to send request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            if status == reqwest::StatusCode::NOT_FOUND {
-                anyhow::bail!("Link with ID {} not found", id);
-            }
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            anyhow::bail!("API error ({}): {}", status, error_text);
-        }
-
-        let link: Link = response.json().await.context("Failed to parse response")?;
-
-        Ok(link)
+        Ok(user)
     }
 }

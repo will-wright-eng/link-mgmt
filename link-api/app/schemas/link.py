@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, HttpUrl
 
@@ -15,7 +16,8 @@ class LinkCreate(LinkBase):
 
 
 class LinkRead(LinkBase):
-    id: int
+    id: UUID
+    user_id: UUID
     created_at: datetime
     updated_at: datetime
 

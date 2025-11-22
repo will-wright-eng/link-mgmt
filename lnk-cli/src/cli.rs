@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::io::IsTerminal;
 
-use crate::client::{Link, LinkClient};
+use crate::client::{Link, LinkClient, UserClient};
 use crate::config::Config;
 use crate::prompts::{prompt_description, prompt_title, prompt_url};
 
@@ -43,8 +43,8 @@ pub enum Commands {
 
     /// Get a specific link by ID
     Get {
-        /// Link ID
-        id: u64,
+        /// Link ID (UUID)
+        id: String,
     },
 
     /// Authentication commands
@@ -58,6 +58,11 @@ pub enum Commands {
 
 #[derive(Subcommand)]
 pub enum AuthCommands {
+    /// Register a new user account
+    Register {
+        /// Email address
+        email: String,
+    },
     /// Login with an API key
     Login {
         /// API key
@@ -66,6 +71,8 @@ pub enum AuthCommands {
     },
     /// Logout (remove stored API key)
     Logout,
+    /// Show current user information
+    Me,
     /// Show authentication status
     Status,
 }
@@ -137,7 +144,7 @@ impl Cli {
             } => Self::handle_save(api_url, config, url, title, description).await,
             Commands::List { limit } => Self::handle_list(api_url, config, limit).await,
             Commands::Get { id } => Self::handle_get(api_url, config, id).await,
-            Commands::Auth(cmd) => Self::handle_auth(config, cmd),
+            Commands::Auth(cmd) => Self::handle_auth(api_url, config, cmd).await,
             Commands::Config(cmd) => Self::handle_config(config, cmd),
         }
     }
@@ -214,15 +221,16 @@ impl Cli {
         Ok(())
     }
 
-    async fn handle_get(api_url: String, config: Config, id: u64) -> Result<()> {
+    async fn handle_get(api_url: String, config: Config, id: String) -> Result<()> {
         let client = Self::create_client(&api_url, &config)?;
-        let link = client.get_link(id).await.context("Failed to get link")?;
+        let link = client.get_link(&id).await.context("Failed to get link")?;
         Self::display_link(&link, true);
         Ok(())
     }
 
-    fn handle_auth(config: Config, cmd: AuthCommands) -> Result<()> {
+    async fn handle_auth(api_url: String, config: Config, cmd: AuthCommands) -> Result<()> {
         match cmd {
+            AuthCommands::Register { email } => Self::handle_register(api_url, config, email).await,
             AuthCommands::Login { api_key } => {
                 config.set_api_key(&api_key)?;
                 println!("✓ API key saved successfully");
@@ -233,8 +241,43 @@ impl Cli {
                 println!("✓ API key removed");
                 Ok(())
             }
+            AuthCommands::Me => Self::handle_me(api_url, config).await,
             AuthCommands::Status => Self::handle_auth_status(config),
         }
+    }
+
+    async fn handle_register(api_url: String, config: Config, email: String) -> Result<()> {
+        let client = UserClient::new(&api_url, &config)?;
+        let user = client
+            .create_user(&email)
+            .await
+            .context("Failed to register user")?;
+
+        // Automatically save the API key
+        config.set_api_key(&user.api_key)?;
+
+        println!("✓ User registered successfully!");
+        println!("  Email: {}", user.email);
+        println!("  User ID: {}", user.id);
+        println!("  Created: {}", user.created_at);
+        println!("  API key saved automatically");
+        println!("\n⚠️  Save this API key securely:");
+        println!("  {}", user.api_key);
+
+        Ok(())
+    }
+
+    async fn handle_me(api_url: String, config: Config) -> Result<()> {
+        let client = UserClient::new(&api_url, &config)?;
+        let user = client.get_me().await.context("Failed to get user info")?;
+
+        println!("Current user:");
+        println!("  ID: {}", user.id);
+        println!("  Email: {}", user.email);
+        println!("  Created: {}", user.created_at);
+        println!("  Updated: {}", user.updated_at);
+
+        Ok(())
     }
 
     fn handle_auth_status(config: Config) -> Result<()> {

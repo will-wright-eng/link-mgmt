@@ -10,6 +10,19 @@ help: ## list make commands
 api: ## Run the API
 	cd link-api && uv run uvicorn app.main:app --reload
 
+# migration commands
+migrate: ## [api] Run all pending migrations
+	cd link-api && uv run alembic upgrade head
+
+migrate-down: ## [api] Rollback one migration
+	cd link-api && uv run alembic downgrade -1
+
+migration: ## [api] Create a new migration (usage: make migration MESSAGE="description")
+	cd link-api && uv run alembic revision --autogenerate -m "$(MESSAGE)"
+
+migrate-history: ## [api] Show migration history
+	cd link-api && uv run alembic history
+
 # cli commands
 build: ## [cli] Build the CLI (release)
 	cd lnk-cli && cargo build --release
