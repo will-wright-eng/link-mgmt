@@ -2,7 +2,7 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 
-from alembic import context
+from alembic import context  # type: ignore[attr-defined]
 
 # Import models and base for autogenerate support
 from app.models.base import Base

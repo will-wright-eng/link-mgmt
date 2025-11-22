@@ -1,4 +1,6 @@
 from functools import lru_cache
+from typing import cast
+
 from pydantic import AnyHttpUrl, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -7,7 +9,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables or .env file."""
 
     api_base_url: AnyHttpUrl = Field(
-        default="https://api.links.yourdomain.com",
+        default=cast(AnyHttpUrl, "https://api.links.yourdomain.com"),
         description="Base URL for the API",
     )
     database_url: str = Field(
