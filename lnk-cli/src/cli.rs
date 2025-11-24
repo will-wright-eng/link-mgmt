@@ -233,12 +233,27 @@ impl Cli {
             AuthCommands::Register { email } => Self::handle_register(api_url, config, email).await,
             AuthCommands::Login { api_key } => {
                 config.set_api_key(&api_key)?;
-                println!("✓ API key saved successfully");
+
+                // Try to fetch and save username
+                if let Ok(client) = UserClient::new(&api_url, &config) {
+                    if let Ok(user) = client.get_me().await {
+                        config.set_username(&user.email)?;
+                        println!("✓ API key saved successfully");
+                        println!("  Username: {}", user.email);
+                    } else {
+                        println!("✓ API key saved successfully");
+                        println!("  Note: Could not fetch user info. Run 'lnk auth me' to verify.");
+                    }
+                } else {
+                    println!("✓ API key saved successfully");
+                }
+
                 Ok(())
             }
             AuthCommands::Logout => {
                 config.remove_api_key()?;
-                println!("✓ API key removed");
+                config.remove_username()?;
+                println!("✓ API key and username removed");
                 Ok(())
             }
             AuthCommands::Me => Self::handle_me(api_url, config).await,
@@ -253,8 +268,9 @@ impl Cli {
             .await
             .context("Failed to register user")?;
 
-        // Automatically save the API key
+        // Automatically save the API key and username
         config.set_api_key(&user.api_key)?;
+        config.set_username(&user.email)?;
 
         println!("✓ User registered successfully!");
         println!("  Email: {}", user.email);
@@ -271,6 +287,9 @@ impl Cli {
         let client = UserClient::new(&api_url, &config)?;
         let user = client.get_me().await.context("Failed to get user info")?;
 
+        // Update username in config if it's different
+        config.set_username(&user.email)?;
+
         println!("Current user:");
         println!("  ID: {}", user.id);
         println!("  Email: {}", user.email);
@@ -284,6 +303,9 @@ impl Cli {
         match config.get_api_key()? {
             Some(key) => {
                 println!("✓ Authenticated");
+                if let Some(username) = config.get_username()? {
+                    println!("  Username: {}", username);
+                }
                 println!(
                     "  API key: {}...{}",
                     &key[..8.min(key.len())],

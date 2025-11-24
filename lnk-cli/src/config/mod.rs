@@ -1,10 +1,8 @@
 use anyhow::{Context, Result};
-use keyring::Entry;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-const SERVICE_NAME: &str = "lnk-cli";
 const CONFIG_FILE: &str = "config.toml";
 
 #[derive(Debug, Clone)]
@@ -45,29 +43,65 @@ impl Config {
     }
 
     pub fn get_api_key(&self) -> Result<Option<String>> {
-        let entry = Entry::new(SERVICE_NAME, "api_key")?;
-        match entry.get_password() {
-            Ok(key) => Ok(Some(key)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(anyhow::anyhow!("Failed to get API key: {}", e)),
-        }
+        self.get("api.key")
     }
 
     pub fn set_api_key(&self, api_key: &str) -> Result<()> {
-        let entry = Entry::new(SERVICE_NAME, "api_key")?;
-        entry
-            .set_password(api_key)
-            .context("Failed to store API key")?;
-        Ok(())
+        self.set("api.key", api_key)
     }
 
     pub fn remove_api_key(&self) -> Result<()> {
-        let entry = Entry::new(SERVICE_NAME, "api_key")?;
-        match entry.delete_password() {
-            Ok(()) => Ok(()),
-            Err(keyring::Error::NoEntry) => Ok(()), // Already removed
-            Err(e) => Err(anyhow::anyhow!("Failed to remove API key: {}", e)),
+        let config_file = self.config_dir.join(CONFIG_FILE);
+        if !config_file.exists() {
+            return Ok(());
         }
+
+        let content = fs::read_to_string(&config_file).context("Failed to read config file")?;
+        let mut config: HashMap<String, toml::Value> =
+            toml::from_str(&content).context("Failed to parse config file")?;
+
+        // Remove api.key from the config
+        if let Some(api_section) = config.get_mut("api") {
+            if let Some(table) = api_section.as_table_mut() {
+                table.remove("key");
+            }
+        }
+
+        let content = toml::to_string_pretty(&config).context("Failed to serialize config")?;
+        fs::write(&config_file, content).context("Failed to write config file")?;
+
+        Ok(())
+    }
+
+    pub fn get_username(&self) -> Result<Option<String>> {
+        self.get("user.email")
+    }
+
+    pub fn set_username(&self, username: &str) -> Result<()> {
+        self.set("user.email", username)
+    }
+
+    pub fn remove_username(&self) -> Result<()> {
+        let config_file = self.config_dir.join(CONFIG_FILE);
+        if !config_file.exists() {
+            return Ok(());
+        }
+
+        let content = fs::read_to_string(&config_file).context("Failed to read config file")?;
+        let mut config: HashMap<String, toml::Value> =
+            toml::from_str(&content).context("Failed to parse config file")?;
+
+        // Remove user.email from the config
+        if let Some(user_section) = config.get_mut("user") {
+            if let Some(table) = user_section.as_table_mut() {
+                table.remove("email");
+            }
+        }
+
+        let content = toml::to_string_pretty(&config).context("Failed to serialize config")?;
+        fs::write(&config_file, content).context("Failed to write config file")?;
+
+        Ok(())
     }
 
     pub fn set(&self, key: &str, value: &str) -> Result<()> {

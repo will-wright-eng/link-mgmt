@@ -2,7 +2,12 @@ import { BrowserManager } from "./browser";
 import { extractMainContent } from "./extractor";
 import { formatResult, formatResults } from "./output";
 import type { ExtractionResult, CliOptions } from "./types";
+import { loadConfig } from "./config";
+import { ApiClient } from "./api-client";
+import { selectLink } from "./selector";
 import { readFileSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
 import { stdin } from "process";
 
 async function readUrlsFromStdin(): Promise<string[]> {
@@ -34,9 +39,9 @@ function isValidUrl(url: string): boolean {
   }
 }
 
-function parseArgs(): CliOptions {
+function parseArgs(): CliOptions & { checkConfig?: boolean } {
   const args = process.argv.slice(2);
-  const options: CliOptions = {
+  const options: CliOptions & { checkConfig?: boolean } = {
     timeout: 10000,
     headless: true,
     format: "jsonl",
@@ -44,7 +49,11 @@ function parseArgs(): CliOptions {
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === "--input" && args[i + 1]) {
+    if (!arg) continue;
+
+    if (arg === "--config" || arg === "--check-config") {
+      options.checkConfig = true;
+    } else if (arg === "--input" && args[i + 1]) {
       options.input = args[i + 1];
       i++;
     } else if (arg === "--output" && args[i + 1]) {
@@ -57,7 +66,10 @@ function parseArgs(): CliOptions {
       }
       i++;
     } else if (arg === "--timeout" && args[i + 1]) {
-      options.timeout = parseInt(args[i + 1], 10);
+      const timeoutValue = args[i + 1];
+      if (timeoutValue) {
+        options.timeout = parseInt(timeoutValue, 10);
+      }
       i++;
     } else if (arg === "--headless" && args[i + 1]) {
       options.headless = args[i + 1] === "true";
@@ -71,6 +83,35 @@ function parseArgs(): CliOptions {
   }
 
   return options;
+}
+
+function checkConfig(): void {
+  try {
+    const config = loadConfig();
+    console.log("✓ Config loaded successfully!");
+    console.log("");
+    console.log("Configuration:");
+    console.log(`  API URL: ${config.apiUrl}`);
+    console.log(
+      `  API Key: ${config.apiKey.substring(0, 8)}...${config.apiKey.substring(config.apiKey.length - 4)}`
+    );
+    console.log("");
+    console.log("Config source:");
+    if (process.env.LNK_API_URL && process.env.LNK_API_KEY) {
+      console.log("  Environment variables (LNK_API_URL, LNK_API_KEY)");
+    } else {
+      const configPath = join(homedir(), ".config", "lnk", "config.toml");
+      console.log(`  Config file: ${configPath}`);
+    }
+  } catch (error) {
+    console.error("✗ Failed to load config:");
+    if (error instanceof Error) {
+      console.error(`  ${error.message}`);
+    } else {
+      console.error(`  ${error}`);
+    }
+    process.exit(1);
+  }
 }
 
 async function getUrls(options: CliOptions): Promise<string[]> {
@@ -112,15 +153,159 @@ async function getUrls(options: CliOptions): Promise<string[]> {
   return [];
 }
 
-async function main(): Promise<void> {
-  const options = parseArgs();
-  const urls = await getUrls(options);
-
-  if (urls.length === 0) {
-    console.error("No valid URLs provided");
+async function interactiveMode(options: CliOptions): Promise<void> {
+  // Load config
+  let config;
+  try {
+    config = loadConfig();
+  } catch (error) {
+    console.error("Failed to load configuration:");
+    if (error instanceof Error) {
+      console.error(`  ${error.message}`);
+    }
     process.exit(1);
   }
 
+  // Create API client
+  const apiClient = new ApiClient(config);
+
+  // List links
+  console.log("Fetching saved links...");
+  let links;
+  try {
+    links = await apiClient.listLinks();
+  } catch (error) {
+    console.error("Failed to fetch links:");
+    if (error instanceof Error) {
+      console.error(`  ${error.message}`);
+    }
+    process.exit(1);
+  }
+
+  if (links.length === 0) {
+    console.log("No saved links found.");
+    process.exit(0);
+  }
+
+  // Select a link
+  let selectedLink;
+  try {
+    selectedLink = await selectLink(links);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Selection cancelled") {
+      console.log("\nCancelled.");
+      process.exit(0);
+    }
+    throw error;
+  }
+
+  // Scrape the selected URL
+  console.log(`\nScraping ${selectedLink.url}...`);
+  const manager = new BrowserManager();
+  await manager.initialize(options.headless);
+
+  let extracted;
+  try {
+    const html = await manager.extractFromUrl(
+      selectedLink.url,
+      options.timeout
+    );
+    extracted = await extractMainContent(html, selectedLink.url);
+  } catch (error) {
+    await manager.cleanup();
+    console.error("Failed to scrape URL:");
+    if (error instanceof Error) {
+      console.error(`  ${error.message}`);
+    }
+    process.exit(1);
+  }
+
+  await manager.cleanup();
+
+  if (!extracted) {
+    console.error("Failed to extract content from the page.");
+    process.exit(1);
+  }
+
+  console.log("✓ Successfully extracted content");
+  console.log(`  Title: ${extracted.title || "(no title)"}`);
+  console.log(`  Content: ${extracted.text.length} characters`);
+
+  // Update the link in the API
+  console.log("\nUpdating link in API...");
+  const updateData: { title?: string; description?: string } = {};
+
+  if (extracted.title) {
+    updateData.title = extracted.title;
+  }
+
+  // Truncate description to 5000 characters if needed
+  if (extracted.text) {
+    updateData.description =
+      extracted.text.length > 5000
+        ? extracted.text.substring(0, 5000)
+        : extracted.text;
+  }
+
+  try {
+    const updatedLink = await apiClient.updateLink(
+      selectedLink.id,
+      updateData
+    );
+    console.log("✓ Link updated successfully!");
+    console.log(`  ID: ${updatedLink.id}`);
+    if (updatedLink.title) {
+      console.log(`  Title: ${updatedLink.title}`);
+    }
+  } catch (error) {
+    // If PATCH fails, try POST as fallback
+    if (error instanceof Error && error.message.includes("404")) {
+      console.log("PATCH endpoint not available, trying POST...");
+      try {
+        const createdLink = await apiClient.createLink({
+          url: selectedLink.url,
+          ...updateData,
+        });
+        console.log("✓ Link created successfully!");
+        console.log(`  ID: ${createdLink.id}`);
+        if (createdLink.title) {
+          console.log(`  Title: ${createdLink.title}`);
+        }
+      } catch (createError) {
+        console.error("Failed to create link:");
+        if (createError instanceof Error) {
+          console.error(`  ${createError.message}`);
+        }
+        process.exit(1);
+      }
+    } else {
+      console.error("Failed to update link:");
+      if (error instanceof Error) {
+        console.error(`  ${error.message}`);
+      }
+      process.exit(1);
+    }
+  }
+}
+
+async function main(): Promise<void> {
+  const options = parseArgs();
+
+  // Handle config check command
+  if (options.checkConfig) {
+    checkConfig();
+    return;
+  }
+
+  const urls = await getUrls(options);
+
+  // If no URLs provided, enter interactive mode
+  if (urls.length === 0) {
+    await interactiveMode(options);
+    return;
+  }
+
+  // Existing URL-based mode (backward compatible)
   const manager = new BrowserManager();
   await manager.initialize(options.headless);
 

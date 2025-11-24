@@ -21,6 +21,9 @@ add: ## Add new link
 links: ## Get list of all links
 	cargo run list
 
+seed: ## Seed the database with sample links
+	./seed-db.sh
+
 install: ## Install the CLI to ~/.cargo/bin
 	cargo install --path .
 
