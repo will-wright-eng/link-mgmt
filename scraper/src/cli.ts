@@ -233,18 +233,15 @@ async function interactiveMode(options: CliOptions): Promise<void> {
 
   // Update the link in the API
   console.log("\nUpdating link in API...");
-  const updateData: { title?: string; description?: string } = {};
+  const updateData: { title?: string; text?: string } = {};
 
   if (extracted.title) {
     updateData.title = extracted.title;
   }
 
-  // Truncate description to 5000 characters if needed
+  // Set text field with extracted content (no truncation needed)
   if (extracted.text) {
-    updateData.description =
-      extracted.text.length > 5000
-        ? extracted.text.substring(0, 5000)
-        : extracted.text;
+    updateData.text = extracted.text;
   }
 
   try {

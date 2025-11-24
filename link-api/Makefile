@@ -11,17 +11,28 @@ api: ## Run the API
 
 # migration commands
 migrate: ## Run all pending migrations
+	uv sync --extra dev
 	uv run alembic upgrade head
 
 migrate-down: ## Rollback one migration
+	uv sync --extra dev
 	uv run alembic downgrade -1
 
 migration: ## Create a new migration (usage: make migration MESSAGE="description")
+	uv sync --extra dev
 	uv run alembic revision --autogenerate -m "$(MESSAGE)"
 
 migrate-history: ## Show migration history
+	uv sync --extra dev
 	uv run alembic history
+
+init-db: ## Initialize database after postgres volume reset (runs all migrations)
+	@echo "Initializing database..."
+	uv sync --extra dev
+	uv run alembic upgrade head
+	@echo "✓ Database initialized successfully!"
 
 # typecheck commands
 typecheck: ## Run type checks
+	uv sync --extra dev
 	uv run ty check

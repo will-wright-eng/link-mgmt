@@ -5,6 +5,7 @@ export interface Link {
   url: string;
   title?: string | null;
   description?: string | null;
+  text?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -12,6 +13,7 @@ export interface Link {
 export interface LinkUpdate {
   title?: string;
   description?: string;
+  text?: string;
 }
 
 export class ApiClient {
@@ -48,7 +50,7 @@ export class ApiClient {
   }
 
   /**
-   * Update a link's title and/or description
+   * Update a link's title, description, and/or text
    */
   async updateLink(linkId: string, data: LinkUpdate): Promise<Link> {
     const response = await fetch(`${this.baseUrl}/api/links/${linkId}`, {
@@ -81,6 +83,7 @@ export class ApiClient {
     url: string;
     title?: string;
     description?: string;
+    text?: string;
   }): Promise<Link> {
     const response = await fetch(`${this.baseUrl}/api/links`, {
       method: "POST",

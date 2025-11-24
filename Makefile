@@ -19,6 +19,9 @@ help: ## list make commands
 up: ## [api] Start the containers
 	docker compose up --build --remove-orphans
 
+upd: ## [api] Start the containers in detached mode
+	docker compose up -d
+
 down: ## [api] Stop the containers
 	docker compose down
 
