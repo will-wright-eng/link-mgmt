@@ -59,3 +59,31 @@ export async function selectLink(links: Link[]): Promise<Link> {
     });
   });
 }
+
+// method to ask user if they would like to update the link
+export async function askToUpdateLink(): Promise<boolean> {
+  const rl = createInterface({
+    input: stdin,
+    output: stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(`Would you like to update the link? (y/n) `, (answer) => {
+      resolve(answer.trim() === "y");
+    });
+  });
+}
+
+// method to ask user if they would like to force update the link
+export async function askToForceUpdateLink(): Promise<boolean> {
+  const rl = createInterface({
+    input: stdin,
+    output: stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(`Would you like to force update the link? (y/n) `, (answer) => {
+      resolve(answer.trim() === "y");
+    });
+  });
+}

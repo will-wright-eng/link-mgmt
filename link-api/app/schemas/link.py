@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class LinkBase(BaseModel):
@@ -17,9 +17,10 @@ class LinkCreate(LinkBase):
 
 
 class LinkUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    text: Optional[str] = None
+    force: bool = False
+    title: Optional[str] = Field(default=None)
+    description: Optional[str] = Field(default=None)
+    text: Optional[str] = Field(default=None)
 
 
 class LinkRead(LinkBase):

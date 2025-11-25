@@ -132,6 +132,26 @@ impl Cli {
         }
     }
 
+    fn display_links(links: &Vec<Link>, limit: Option<usize>) {
+        println!("Found {} link(s):\n", links.len());
+        for link in links.iter().take(limit.unwrap_or(20)) {
+            println!("  [{}] {}", link.id, link.url);
+            if let Some(title) = &link.title {
+                println!("      Title: {}", title);
+            }
+            if let Some(description) = &link.description {
+                let max_len = 80;
+                if description.len() > max_len {
+                    println!("      Description: {}...", &description[..max_len]);
+                } else {
+                    println!("      Description: {}", description);
+                }
+            }
+            println!("      Created: {}", link.created_at);
+            println!("      Updated: {}\n", link.updated_at);
+        }
+    }
+
     pub async fn run(self) -> Result<()> {
         let config = Config::load()?;
         let api_url = Self::resolve_api_url(self.api_url, &config);
@@ -209,15 +229,16 @@ impl Cli {
         let client = Self::create_client(&api_url, &config)?;
         let links = client.list_links().await.context("Failed to list links")?;
 
-        let display_links: Vec<_> = links.iter().take(limit.unwrap_or(20)).collect();
-        println!("Found {} link(s):\n", links.len());
-        for link in display_links {
-            println!("  [{}] {}", link.id, link.url);
-            if let Some(title) = &link.title {
-                println!("      Title: {}", title);
-            }
-            println!("      Created: {}\n", link.created_at);
-        }
+        Self::display_links(&links, limit);
+        // let display_links: Vec<_> = links.iter().take(limit.unwrap_or(20)).collect();
+        // println!("Found {} link(s):\n", links.len());
+        // for link in display_links {
+        //     println!("  [{}] {}", link.id, link.url);
+        //     if let Some(title) = &link.title {
+        //         println!("      Title: {}", title);
+        //     }
+        //     println!("      Created: {}\n", link.created_at);
+        // }
         Ok(())
     }
 

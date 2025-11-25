@@ -4,7 +4,7 @@ import { formatResult, formatResults } from "./output";
 import type { ExtractionResult, CliOptions } from "./types";
 import { loadConfig } from "./config";
 import { ApiClient } from "./api-client";
-import { selectLink } from "./selector";
+import { askToForceUpdateLink, askToUpdateLink, selectLink } from "./selector";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
@@ -244,45 +244,41 @@ async function interactiveMode(options: CliOptions): Promise<void> {
     updateData.text = extracted.text;
   }
 
-  try {
-    const updatedLink = await apiClient.updateLink(
-      selectedLink.id,
-      updateData
-    );
-    console.log("✓ Link updated successfully!");
-    console.log(`  ID: ${updatedLink.id}`);
-    if (updatedLink.title) {
+  // display results and get link by ID from API
+  console.log("\nGetting link from API...");
+  const link = await apiClient.getLink(selectedLink.id);
+  console.log(`  ID: ${link.id}`);
+  console.log(`  Title: ${link.title}`);
+  console.log(`  Description: ${link.description}`);
+  console.log(`  Created: ${link.created_at}`);
+  console.log(`  Updated: ${link.updated_at}`);
+  console.log("");
+
+  console.log("\nData extracted from the page:");
+  console.log(`  Title: ${extracted.title}`);
+  console.log(`  Content: ${extracted.text.length} characters`);
+  console.log("");
+  const updateLink = await askToUpdateLink();
+  const forceUpdateLink = await askToForceUpdateLink();
+
+  if (updateLink) {
+    try {
+      const updatedLink = await apiClient.updateLink(selectedLink.id, updateData, forceUpdateLink);
+      console.log("✓ Link updated successfully!");
+      console.log(`  ID: ${updatedLink.id}`);
       console.log(`  Title: ${updatedLink.title}`);
-    }
-  } catch (error) {
-    // If PATCH fails, try POST as fallback
-    if (error instanceof Error && error.message.includes("404")) {
-      console.log("PATCH endpoint not available, trying POST...");
-      try {
-        const createdLink = await apiClient.createLink({
-          url: selectedLink.url,
-          ...updateData,
-        });
-        console.log("✓ Link created successfully!");
-        console.log(`  ID: ${createdLink.id}`);
-        if (createdLink.title) {
-          console.log(`  Title: ${createdLink.title}`);
-        }
-      } catch (createError) {
-        console.error("Failed to create link:");
-        if (createError instanceof Error) {
-          console.error(`  ${createError.message}`);
-        }
-        process.exit(1);
-      }
-    } else {
+    } catch (error) {
       console.error("Failed to update link:");
       if (error instanceof Error) {
         console.error(`  ${error.message}`);
       }
       process.exit(1);
     }
+  } else {
+    console.log("Link not updated.");
+    process.exit(0);
   }
+  process.exit(0);
 }
 
 async function main(): Promise<void> {

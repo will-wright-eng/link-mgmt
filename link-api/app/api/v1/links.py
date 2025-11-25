@@ -82,13 +82,19 @@ async def update_link(
             status_code=status.HTTP_404_NOT_FOUND, detail="Link not found"
         )
 
-    # Update only provided fields
-    if payload.title is not None:
-        link.title = payload.title
-    if payload.description is not None:
-        link.description = payload.description
-    if payload.text is not None:
-        link.text = payload.text
+    if payload.force:
+        # Get all set fields from payload (excluding 'force')
+        update_data = payload.model_dump(exclude_unset=True, exclude={"force"})
+        for field, value in update_data.items():
+            setattr(link, field, value)
+    else:
+        # Update only provided fields
+        if payload.title is not None:
+            link.title = payload.title
+        if payload.description is not None:
+            link.description = payload.description
+        if payload.text is not None:
+            link.text = payload.text
 
     await db.commit()
     await db.refresh(link)

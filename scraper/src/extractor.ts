@@ -2,6 +2,10 @@ import { JSDOM } from "jsdom";
 import { Readability } from "@mozilla/readability";
 import type { ExtractedContent } from "./types";
 
+export function cleanupText(text: string): string {
+  return text.replace(/^[\n\r]+|[\n\r]+$/g, '').trim();
+}
+
 export async function extractMainContent(
   html: string,
   url: string,
@@ -17,7 +21,7 @@ export async function extractMainContent(
 
     return {
       title: article.title || "",
-      text: article.textContent || "",
+      text: cleanupText(article.textContent || ""),
     };
   } catch (error) {
     console.error("Extraction failed:", error);

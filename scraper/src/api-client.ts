@@ -52,14 +52,14 @@ export class ApiClient {
   /**
    * Update a link's title, description, and/or text
    */
-  async updateLink(linkId: string, data: LinkUpdate): Promise<Link> {
+  async updateLink(linkId: string, data: LinkUpdate, force: boolean = false): Promise<Link> {
     const response = await fetch(`${this.baseUrl}/api/links/${linkId}`, {
       method: "PATCH",
       headers: {
         "X-API-Key": this.apiKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, force }),
     });
 
     if (!response.ok) {
@@ -77,31 +77,57 @@ export class ApiClient {
   }
 
   /**
-   * Create a new link (fallback if PATCH is not available)
+   * Get link by ID
    */
-  async createLink(data: {
-    url: string;
-    title?: string;
-    description?: string;
-    text?: string;
-  }): Promise<Link> {
-    const response = await fetch(`${this.baseUrl}/api/links`, {
-      method: "POST",
+  async getLink(linkId: string): Promise<Link> {
+    const response = await fetch(`${this.baseUrl}/api/links/${linkId}`, {
+      method: "GET",
       headers: {
         "X-API-Key": this.apiKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(data),
     });
 
     if (!response.ok) {
       if (response.status === 401) {
         throw new Error("Unauthorized: Invalid API key");
       }
+      if (response.status === 404) {
+        throw new Error(`Link not found: ${linkId}`);
+      }
       const errorText = await response.text().catch(() => "Unknown error");
-      throw new Error(`Failed to create link: ${response.status} ${errorText}`);
+      throw new Error(`Failed to get link: ${response.status} ${errorText}`);
     }
 
-    return await response.json();
+    return (await response.json()) as Link;
   }
+
+  // /**
+  //  * Create a new link (fallback if PATCH is not available)
+  //  */
+  // async createLink(data: {
+  //   url: string;
+  //   title?: string;
+  //   description?: string;
+  //   text?: string;
+  // }): Promise<Link> {
+  //   const response = await fetch(`${this.baseUrl}/api/links`, {
+  //     method: "POST",
+  //     headers: {
+  //       "X-API-Key": this.apiKey,
+  //       "Content-Type": "application/json",
+  //     },
+  //     body: JSON.stringify(data),
+  //   });
+
+  //   if (!response.ok) {
+  //     if (response.status === 401) {
+  //       throw new Error("Unauthorized: Invalid API key");
+  //     }
+  //     const errorText = await response.text().catch(() => "Unknown error");
+  //     throw new Error(`Failed to create link: ${response.status} ${errorText}`);
+  //   }
+
+  //   return await response.json();
+  // }
 }

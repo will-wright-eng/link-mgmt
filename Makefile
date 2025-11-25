@@ -36,8 +36,8 @@ clean: ## Clean up
 	find . -type d -name ".venv" -exec rm -rf {} +
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -exec rm -f {} +
-	rm -rf .ruff_cache
-	$(MAKE) -C lnk-cli clean 2>/dev/null || cd lnk-cli && cargo clean
+	find . -type d -name ".ruff_cache" -exec rm -rf {} +
+	find . -type d -name "node_modules" -exec rm -rf {} +
 
 open: ## open api swagger ui
 	open http://localhost:8000
