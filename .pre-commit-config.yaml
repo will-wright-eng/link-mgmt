@@ -9,20 +9,6 @@ repos:
       - id: check-json
         exclude: tsconfig\.json$
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.9
-    hooks:
-      - id: ruff
-        args:
-          - --fix
-      - id: ruff-format
-
-  - repo: https://github.com/hadolint/hadolint
-    rev: v2.12.0
-    hooks:
-      - id: hadolint
-        files: ^(Dockerfile|.*Dockerfile|.*\.Dockerfile)$
-
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.45.0
     hooks:
@@ -31,30 +17,3 @@ repos:
       - --fix
       verbose: true
       entry: bash -c 'markdownlint "$@" || true' --
-
-  # Rust hooks
-  - repo: local
-    hooks:
-      - id: rust-fmt
-        name: rust fmt
-        entry: bash -c 'cd lnk-cli && cargo fmt --all'
-        language: system
-        files: ^lnk-cli/.*\.rs$
-        pass_filenames: false
-      - id: rust-clippy
-        name: rust clippy
-        entry: bash -c 'cd lnk-cli && cargo clippy --all-targets --all-features -- -D warnings'
-        language: system
-        files: ^lnk-cli/.*\.rs$
-        pass_filenames: false
-
-  # # custom hook for type checking
-  # - repo: local
-  #   hooks:
-  #     - id: typecheck
-  #       name: Type checking
-  #       entry: make typecheck-precommit
-  #       language: system
-  #       files: ^(link-api/.*)$
-  #       pass_filenames: false
-  #       stages: [commit]
