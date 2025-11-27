@@ -359,53 +359,169 @@ func (db *DB) DeleteLink(ctx context.Context, linkID, userID uuid.UUID) error {
 package config
 
 import (
+    "fmt"
     "os"
-    "strconv"
+    "path/filepath"
+    "strings"
+
+    "github.com/pelletier/go-toml/v2"
 )
 
 type Config struct {
     // Database
-    DatabaseURL string
+    Database struct {
+        URL string `toml:"url"`
+    } `toml:"database"`
 
     // API
-    APIPort     int
-    APIHost     string
+    API struct {
+        Port int    `toml:"port"`
+        Host string `toml:"host"`
+    } `toml:"api"`
 
     // CLI
-    ConfigDir   string
-    APIBaseURL  string
-    APIKey      string
+    CLI struct {
+        APIBaseURL string `toml:"api_base_url"`
+        APIKey     string `toml:"api_key"`
+    } `toml:"cli"`
 }
 
+// DefaultConfig returns a config with default values
+func DefaultConfig() *Config {
+    cfg := &Config{}
+    cfg.Database.URL = "postgres://localhost/linkmgmt?sslmode=disable"
+    cfg.API.Port = 8080
+    cfg.API.Host = "0.0.0.0"
+    cfg.CLI.APIBaseURL = "http://localhost:8080"
+    cfg.CLI.APIKey = ""
+    return cfg
+}
+
+// ConfigPath returns the path to the config file
+func ConfigPath() (string, error) {
+    homeDir, err := os.UserHomeDir()
+    if err != nil {
+        return "", fmt.Errorf("failed to get home directory: %w", err)
+    }
+    configDir := filepath.Join(homeDir, ".config", "link-mgmt")
+    return filepath.Join(configDir, "config.toml"), nil
+}
+
+// Load reads configuration from ~/.config/link-mgmt/config.toml
+// Creates the file with defaults if it doesn't exist
 func Load() (*Config, error) {
-    cfg := &Config{
-        DatabaseURL: getEnv("DATABASE_URL", "postgres://localhost/linkmgmt?sslmode=disable"),
-        APIPort:     getEnvInt("API_PORT", 8080),
-        APIHost:     getEnv("API_HOST", "0.0.0.0"),
-        ConfigDir:   getEnv("CONFIG_DIR", "~/.config/link-mgmt"),
-        APIBaseURL:  getEnv("API_BASE_URL", "http://localhost:8080"),
-        APIKey:      getEnv("API_KEY", ""),
+    configPath, err := ConfigPath()
+    if err != nil {
+        return nil, err
     }
 
-    return cfg, nil
-}
-
-func getEnv(key, defaultValue string) string {
-    if value := os.Getenv(key); value != "" {
-        return value
-    }
-    return defaultValue
-}
-
-func getEnvInt(key string, defaultValue int) int {
-    if value := os.Getenv(key); value != "" {
-        if intValue, err := strconv.Atoi(value); err == nil {
-            return intValue
+    // Expand ~ in path if needed
+    if strings.HasPrefix(configPath, "~") {
+        homeDir, err := os.UserHomeDir()
+        if err != nil {
+            return nil, fmt.Errorf("failed to get home directory: %w", err)
         }
+        configPath = strings.Replace(configPath, "~", homeDir, 1)
     }
-    return defaultValue
+
+    // Check if config file exists
+    if _, err := os.Stat(configPath); os.IsNotExist(err) {
+        // Create directory if it doesn't exist
+        configDir := filepath.Dir(configPath)
+        if err := os.MkdirAll(configDir, 0755); err != nil {
+            return nil, fmt.Errorf("failed to create config directory: %w", err)
+        }
+
+        // Create default config file
+        cfg := DefaultConfig()
+        if err := Save(cfg); err != nil {
+            return nil, fmt.Errorf("failed to create default config: %w", err)
+        }
+        return cfg, nil
+    }
+
+    // Read existing config file
+    data, err := os.ReadFile(configPath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read config file: %w", err)
+    }
+
+    var cfg Config
+    if err := toml.Unmarshal(data, &cfg); err != nil {
+        return nil, fmt.Errorf("failed to parse config file: %w", err)
+    }
+
+    // Merge with defaults for any missing values
+    defaultCfg := DefaultConfig()
+    if cfg.Database.URL == "" {
+        cfg.Database.URL = defaultCfg.Database.URL
+    }
+    if cfg.API.Port == 0 {
+        cfg.API.Port = defaultCfg.API.Port
+    }
+    if cfg.API.Host == "" {
+        cfg.API.Host = defaultCfg.API.Host
+    }
+    if cfg.CLI.APIBaseURL == "" {
+        cfg.CLI.APIBaseURL = defaultCfg.CLI.APIBaseURL
+    }
+
+    return &cfg, nil
+}
+
+// Save writes the configuration to the config file
+func Save(cfg *Config) error {
+    configPath, err := ConfigPath()
+    if err != nil {
+        return err
+    }
+
+    // Expand ~ in path if needed
+    if strings.HasPrefix(configPath, "~") {
+        homeDir, err := os.UserHomeDir()
+        if err != nil {
+            return fmt.Errorf("failed to get home directory: %w", err)
+        }
+        configPath = strings.Replace(configPath, "~", homeDir, 1)
+    }
+
+    // Create directory if it doesn't exist
+    configDir := filepath.Dir(configPath)
+    if err := os.MkdirAll(configDir, 0755); err != nil {
+        return fmt.Errorf("failed to create config directory: %w", err)
+    }
+
+    // Marshal to TOML
+    data, err := toml.Marshal(cfg)
+    if err != nil {
+        return fmt.Errorf("failed to marshal config: %w", err)
+    }
+
+    // Write to file
+    if err := os.WriteFile(configPath, data, 0644); err != nil {
+        return fmt.Errorf("failed to write config file: %w", err)
+    }
+
+    return nil
 }
 ```
+
+Example `~/.config/link-mgmt/config.toml`:
+
+```toml
+[database]
+url = "postgres://localhost/linkmgmt?sslmode=disable"
+
+[api]
+host = "0.0.0.0"
+port = 8080
+
+[cli]
+api_base_url = "http://localhost:8080"
+api_key = ""
+```
+
+**Note:** The config file will be automatically created with defaults on first run if it doesn't exist.
 
 ## API Server (`cmd/api/`)
 
@@ -439,7 +555,7 @@ func main() {
     ctx := context.Background()
 
     // Initialize database
-    database, err := db.New(ctx, cfg.DatabaseURL)
+    database, err := db.New(ctx, cfg.Database.URL)
     if err != nil {
         log.Fatalf("failed to connect to database: %v", err)
     }
@@ -450,7 +566,7 @@ func main() {
 
     // Create server
     srv := &http.Server{
-        Addr:         fmt.Sprintf("%s:%d", cfg.APIHost, cfg.APIPort),
+        Addr:         fmt.Sprintf("%s:%d", cfg.API.Host, cfg.API.Port),
         Handler:      router,
         ReadTimeout:  15 * time.Second,
         WriteTimeout: 15 * time.Second,
@@ -662,7 +778,7 @@ func main() {
     // For CLI, we might connect to API instead of DB directly
     // Or connect to DB for direct access
     ctx := context.Background()
-    database, err := db.New(ctx, cfg.DatabaseURL)
+    database, err := db.New(ctx, cfg.Database.URL)
     if err != nil {
         log.Fatalf("failed to connect to database: %v", err)
     }
@@ -1013,6 +1129,7 @@ go get github.com/jackc/pgx/v5/pgxpool
 go get github.com/charmbracelet/bubbletea
 go get github.com/google/uuid
 go get github.com/golang-migrate/migrate/v4
+go get github.com/pelletier/go-toml/v2
 
 # Install migrate CLI
 go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
@@ -1086,11 +1203,14 @@ For this project, **Gin is recommended** for:
 
 ### 4. Configuration Management
 
-**Recommendation: Environment variables + config file**
+**Recommendation: TOML config file**
 
-- Environment variables for deployment (12-factor app)
-- Config file (`~/.config/link-mgmt/config.yaml`) for CLI user preferences
-- Use `viper` or simple env-based config
+- Single config file at `~/.config/link-mgmt/config.toml` for all settings
+- Auto-created with sensible defaults on first run
+- TOML format is human-readable and easy to edit
+- Use `github.com/pelletier/go-toml/v2` for parsing
+- Both API and CLI read from the same config file
+- API key stored in config file (consider keychain integration for production)
 
 ### 5. Authentication
 

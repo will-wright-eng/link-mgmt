@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: link_mgmt
+      POSTGRES_USER: link_mgmt
+      POSTGRES_PASSWORD: link_mgmt
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
