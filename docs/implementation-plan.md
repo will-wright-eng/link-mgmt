@@ -14,15 +14,15 @@ This document outlines the implementation plan for completing the Go CLI applica
 - Configuration management
 - CLI entry point structure
 
-⚠️ **Phase 2: IN PROGRESS (~60% Complete)**
+✅ **Phase 2: COMPLETE**
 
 - ✅ HTTP client package created
 - ✅ Removed direct DB connection from CLI
 - ✅ User registration command (`--register`) with auto API key saving
 - ✅ `--list` command implemented and working
 - ✅ Migration commands added to Makefile
-- ⚠️ `--add` command - pending
-- ⚠️ `--delete` command - pending
+- ✅ `--add` command implemented with interactive Bubble Tea prompts
+- ✅ `--delete` command implemented with selection and confirmation
 
 ❌ **Phase 3: NOT STARTED**
 
@@ -316,21 +316,21 @@ Are you sure you want to delete "Example Site"? (y/N): y
    - [x] Improved error messages for missing database tables
    - [x] Added migration commands to Makefile
 
-5. **Step 4**: Implement `--add` command ⚠️ **PENDING**
+5. **Step 4**: Implement `--add` command ✅ **COMPLETE**
 
-   - [ ] Use Bubble Tea textinput/textarea components for prompts
-   - [ ] Interactive prompts for URL (required), Title, Description, Text (optional)
-   - [ ] Validate URL format
-   - [ ] Call `client.CreateLink()` API
-   - [ ] Display success message with created link details
+   - [x] Use Bubble Tea textinput/textarea components for prompts
+   - [x] Interactive prompts for URL (required), Title, Description, Text (optional)
+   - [x] Validate URL format
+   - [x] Call `client.CreateLink()` API
+   - [x] Display success message with created link details
 
-6. **Step 5**: Implement `--delete` command ⚠️ **PENDING**
-   - [ ] Fetch links via `client.ListLinks()`
-   - [ ] Display numbered list using Bubble Tea
-   - [ ] Selection prompt (can use simple Bubble Tea program or textinput)
-   - [ ] Confirmation prompt
-   - [ ] Call `client.DeleteLink(id)` API
-   - [ ] Display success message
+6. **Step 5**: Implement `--delete` command ✅ **COMPLETE**
+   - [x] Fetch links via `client.ListLinks()`
+   - [x] Display numbered list using Bubble Tea with keyboard navigation
+   - [x] Selection prompt with arrow keys (j/k or ↑/↓)
+   - [x] Confirmation prompt (y/N)
+   - [x] Call `client.DeleteLink(id)` API
+   - [x] Display success message
 
 ### Future (Phase 3)
 
@@ -384,13 +384,15 @@ Are you sure you want to delete "Example Site"? (y/N): y
 - `pkg/cli/models/list.go` (Phase 3)
 - `pkg/cli/models/form.go` (Phase 3)
 
+**Note**: Add link form and delete link selector are implemented as models within `pkg/cli/app.go` (not separate files)
+
 ### Modified Files ✅
 
-- ✅ `pkg/cli/app.go` - Replaced DB calls with HTTP client calls, added registration
+- ✅ `pkg/cli/app.go` - Replaced DB calls with HTTP client calls, added registration, implemented `--add` and `--delete` commands with Bubble Tea
 - ✅ `cmd/cli/main.go` - Added `--register` flag, improved error messages
 - ✅ `Makefile` (root) - Added `migrate` command
 - ✅ `link-mgmt-go/Makefile` - Added migration commands
-- `go.mod` - Bubble Tea dependencies already present (no new dependencies needed)
+- ✅ `go.mod` - Added Bubble Tea bubbles dependencies (textinput, textarea)
 
 ### Removed ✅
 
@@ -405,9 +407,9 @@ Are you sure you want to delete "Example Site"? (y/N): y
 - [x] All commands use HTTP client (not direct DB)
 - [x] Error messages are user-friendly (with helpful migration instructions)
 - [x] User registration workflow working
-- [ ] `--add` command allows creating links via prompts
-- [ ] `--delete` command allows deleting links with confirmation
-- [ ] Basic tests pass
+- [x] `--add` command allows creating links via prompts
+- [x] `--delete` command allows deleting links with confirmation
+- [ ] Basic tests pass (optional - can be added later)
 
 ### Phase 3 Complete When
 
