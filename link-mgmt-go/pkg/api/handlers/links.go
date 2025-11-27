@@ -64,6 +64,36 @@ func GetLink(db *db.DB) gin.HandlerFunc {
 	}
 }
 
+func UpdateLink(db *db.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.MustGet("userID").(uuid.UUID)
+
+		linkID, err := uuid.Parse(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid link ID"})
+			return
+		}
+
+		var linkUpdate models.LinkUpdate
+		if err := c.ShouldBindJSON(&linkUpdate); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		link, err := db.UpdateLink(c.Request.Context(), linkID, userID, linkUpdate)
+		if err != nil {
+			if err.Error() == "link not found" {
+				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, link)
+	}
+}
+
 func DeleteLink(db *db.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.MustGet("userID").(uuid.UUID)

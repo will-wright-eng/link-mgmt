@@ -8,14 +8,14 @@
 
 ## Quick Status Summary
 
-**Overall Progress**: ~70% Complete
+**Overall Progress**: ~75% Complete
 
 - ✅ **Core Infrastructure**: Models, database layer, configuration, API server structure
-- ✅ **API Endpoints**: GET/POST/DELETE for links, user management (missing PUT for updates)
+- ✅ **API Endpoints**: Full CRUD for links (GET/POST/PUT/DELETE), user management
 - ✅ **Middleware**: Authentication, error handling, logging
 - ⚠️ **CLI**: Basic structure and config commands work, but link management commands are stubs
 - ❌ **TUI**: Bubble Tea interactive interface not implemented
-- ❌ **Missing Features**: UpdateLink functionality, Dockerfile, cross-compilation targets
+- ❌ **Missing Features**: Dockerfile, cross-compilation targets
 
 **Additional Features Found** (not in original design):
 
@@ -58,17 +58,17 @@ link-mgmt-go/
 │   │   └── link.go              # ✅ Link model (includes LinkCreate, LinkUpdate)
 │   ├── db/
 │   │   ├── postgres.go          # ✅ Connection setup & pool
-│   │   └── queries.go           # ⚠️ Database queries (missing UpdateLink)
+│   │   └── queries.go           # ✅ Database queries (all CRUD operations)
 │   ├── api/
 │   │   ├── handlers/
 │   │   │   ├── users.go         # ✅ User API handlers
-│   │   │   ├── links.go         # ⚠️ Link API handlers (missing UpdateLink)
+│   │   │   ├── links.go         # ✅ Link API handlers (full CRUD)
 │   │   │   └── health.go        # ✅ Health check handler
 │   │   ├── middleware/
 │   │   │   ├── auth.go          # ✅ API key authentication
 │   │   │   ├── error.go         # ✅ Error handling middleware
 │   │   │   └── logging.go       # ✅ Request logging
-│   │   └── router.go            # ⚠️ HTTP router setup (missing PUT /links/:id)
+│   │   └── router.go            # ✅ HTTP router setup (all routes including PUT)
 │   ├── cli/
 │   │   ├── app.go               # ⚠️ Basic CLI app (TUI not implemented)
 │   │   └── models/              # ❌ TUI models directory exists but empty
@@ -148,13 +148,13 @@ type User struct {
 
 **Status**: Fully implemented. Includes `Link`, `LinkCreate`, and `LinkUpdate` types.
 
-### Database Layer (`pkg/db/`) ⚠️ **Partially Implemented**
+### Database Layer (`pkg/db/`) ✅ **Implemented**
 
-**Status**: Connection setup and most queries implemented. Missing `UpdateLink` function.
+**Status**: Connection setup and all queries implemented, including `UpdateLink` function.
 
 #### Connection Setup ✅
 
-#### Query Functions ⚠️
+#### Query Functions ✅
 
 **Status**:
 
@@ -163,45 +163,8 @@ type User struct {
 - ✅ `GetLinksByUserID` - Implemented
 - ✅ `CreateLink` - Implemented
 - ✅ `GetLinkByID` - Implemented (not in design doc, but added)
+- ✅ `UpdateLink` - Implemented
 - ✅ `DeleteLink` - Implemented
-- ❌ `UpdateLink` - Not implemented
-
-```go
-// pkg/db/queries.go
-package db
-
-import (
-    "context"
-    "fmt"
-    "link-mgmt-go/pkg/models"
-    "github.com/google/uuid"
-    "github.com/jackc/pgx/v5"
-)
-
-// UpdateLink updates an existing link
-// ❌ NOT IMPLEMENTED - This function is missing from queries.go
-func (db *DB) UpdateLink(ctx context.Context, linkID, userID uuid.UUID, update models.LinkUpdate) (*models.Link, error) {
-    // Build dynamic update query
-    // Implementation details...
-}
-
-// DeleteLink deletes a link
-func (db *DB) DeleteLink(ctx context.Context, linkID, userID uuid.UUID) error {
-    result, err := db.Pool.Exec(ctx,
-        `DELETE FROM links WHERE id = $1 AND user_id = $2`,
-        linkID, userID,
-    )
-    if err != nil {
-        return fmt.Errorf("failed to delete link: %w", err)
-    }
-
-    if result.RowsAffected() == 0 {
-        return fmt.Errorf("link not found")
-    }
-
-    return nil
-}
-```
 
 ### Configuration (`pkg/config/`) ✅ **Implemented**
 
@@ -211,70 +174,22 @@ func (db *DB) DeleteLink(ctx context.Context, linkID, userID uuid.UUID) error {
 
 ## API Server (`cmd/api/`) ✅ **Implemented**
 
-**Status**: Entry point, router, handlers, and middleware are implemented. Missing `UpdateLink` handler and route.
+**Status**: Entry point, router, handlers, and middleware are fully implemented. All CRUD operations for links are complete.
 
 ### Entry Point ✅
 
-### Router Setup ⚠️
+### Router Setup ✅
 
-**Status**: Router implemented with Gin. Missing `PUT /api/v1/links/:id` route for updating links.
+**Status**: Router implemented with Gin. All routes including `PUT /api/v1/links/:id` are implemented.
 
-```go
-// pkg/api/router.go
-package api
-
-import (
-    "link-mgmt-go/pkg/api/handlers"
-    "link-mgmt-go/pkg/api/middleware"
-    "link-mgmt-go/pkg/db"
-
-    "github.com/gin-gonic/gin"
-)
-
-func NewRouter(db *db.DB) *gin.Engine {
-    router := gin.Default()
-
-    // Middleware
-    router.Use(middleware.RequestLogger())
-    router.Use(middleware.ErrorHandler())
-
-    // Health check
-    router.GET("/health", handlers.HealthCheck)
-
-    // API routes
-    v1 := router.Group("/api/v1")
-    {
-        // Links
-        links := v1.Group("/links")
-        links.Use(middleware.RequireAuth(db))
-        {
-            links.GET("", handlers.ListLinks(db))
-            links.POST("", handlers.CreateLink(db))
-            links.GET("/:id", handlers.GetLink(db))
-            // ❌ Missing: links.PUT("/:id", handlers.UpdateLink(db))
-            links.DELETE("/:id", handlers.DeleteLink(db))
-        }
-
-        // Users
-        users := v1.Group("/users")
-        {
-            users.POST("", handlers.CreateUser(db))
-            users.GET("/me", middleware.RequireAuth(db), handlers.GetCurrentUser(db))
-        }
-    }
-
-    return router
-}
-```
-
-### Handlers ⚠️
+### Handlers ✅
 
 **Status**:
 
 - ✅ `ListLinks` - Implemented
 - ✅ `CreateLink` - Implemented
 - ✅ `GetLink` - Implemented (not in design doc, but added)
-- ❌ `UpdateLink` - Not implemented
+- ✅ `UpdateLink` - Implemented
 - ✅ `DeleteLink` - Implemented
 - ✅ `CreateUser` - Implemented
 - ✅ `GetCurrentUser` - Implemented
@@ -724,26 +639,22 @@ sql:
 ### ✅ Completed (Phase 1 - Core Library + API)
 
 - ✅ Models (User, Link, LinkCreate, LinkUpdate)
-- ✅ Database layer (connection, most queries)
+- ✅ Database layer (connection, all queries including UpdateLink)
 - ✅ Configuration management
 - ✅ API server entry point
-- ✅ Router setup (missing UpdateLink route)
-- ✅ Handlers (ListLinks, CreateLink, GetLink, DeleteLink, CreateUser, GetCurrentUser)
+- ✅ Router setup (all routes including PUT /links/:id)
+- ✅ Handlers (ListLinks, CreateLink, GetLink, UpdateLink, DeleteLink, CreateUser, GetCurrentUser)
 - ✅ Middleware (auth, error handling, logging)
 - ✅ Database migrations
 - ✅ CLI entry point with config commands
 
 ### ⚠️ Partially Complete
 
-- ⚠️ Database queries (missing `UpdateLink`)
-- ⚠️ API router (missing PUT route)
 - ⚠️ CLI app (structure exists, but commands are stubs)
 - ⚠️ Makefile (basic commands only, missing cross-compilation)
 
 ### ❌ Not Implemented
 
-- ❌ `UpdateLink` database query and handler
-- ❌ PUT `/api/v1/links/:id` route
 - ❌ CLI commands (`--list`, `--add`, `--delete` implementations)
 - ❌ Bubble Tea TUI (interactive mode)
 - ❌ TUI models (list.go, form.go, help.go)
@@ -754,9 +665,7 @@ sql:
 
 ## Next Steps
 
-1. **Phase 1 Remaining**:
-   - Implement `UpdateLink` query and handler
-   - Add PUT route to router
+1. **Phase 1**: ✅ **COMPLETE** - All core API functionality implemented
 2. **Phase 2**: CLI basic commands (list, add, delete) - currently stubs
 3. **Phase 3**: Interactive TUI with Bubble Tea - not started
 4. **Phase 4**: Advanced features (search, tags, export)

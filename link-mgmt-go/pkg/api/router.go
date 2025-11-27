@@ -28,6 +28,7 @@ func NewRouter(db *db.DB) *gin.Engine {
 			links.GET("", handlers.ListLinks(db))
 			links.POST("", handlers.CreateLink(db))
 			links.GET("/:id", handlers.GetLink(db))
+			links.PUT("/:id", handlers.UpdateLink(db))
 			links.DELETE("/:id", handlers.DeleteLink(db))
 		}
 

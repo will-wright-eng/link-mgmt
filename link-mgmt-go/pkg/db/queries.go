@@ -149,6 +149,59 @@ func (db *DB) GetLinkByID(ctx context.Context, linkID, userID uuid.UUID) (*model
 	return &link, nil
 }
 
+// UpdateLink updates an existing link
+func (db *DB) UpdateLink(ctx context.Context, linkID, userID uuid.UUID, update models.LinkUpdate) (*models.Link, error) {
+	// Build dynamic update query based on provided fields
+	query := `UPDATE links SET updated_at = NOW()`
+	args := []interface{}{linkID, userID}
+	argPos := 3 // Start at $3 (after $1=linkID, $2=userID)
+
+	if update.URL != nil {
+		query += fmt.Sprintf(", url = $%d", argPos)
+		args = append(args, *update.URL)
+		argPos++
+	}
+	if update.Title != nil {
+		query += fmt.Sprintf(", title = $%d", argPos)
+		args = append(args, *update.Title)
+		argPos++
+	}
+	if update.Description != nil {
+		query += fmt.Sprintf(", description = $%d", argPos)
+		args = append(args, *update.Description)
+		argPos++
+	}
+	if update.Text != nil {
+		query += fmt.Sprintf(", text = $%d", argPos)
+		args = append(args, *update.Text)
+		argPos++
+	}
+
+	query += ` WHERE id = $1 AND user_id = $2
+		RETURNING id, user_id, url, title, description, text, created_at, updated_at`
+
+	var link models.Link
+	err := db.Pool.QueryRow(ctx, query, args...).Scan(
+		&link.ID,
+		&link.UserID,
+		&link.URL,
+		&link.Title,
+		&link.Description,
+		&link.Text,
+		&link.CreatedAt,
+		&link.UpdatedAt,
+	)
+
+	if err == pgx.ErrNoRows {
+		return nil, fmt.Errorf("link not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to update link: %w", err)
+	}
+
+	return &link, nil
+}
+
 // DeleteLink deletes a link
 func (db *DB) DeleteLink(ctx context.Context, linkID, userID uuid.UUID) error {
 	result, err := db.Pool.Exec(ctx,

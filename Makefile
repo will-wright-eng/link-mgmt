@@ -39,6 +39,12 @@ purge: ## [api] Purge the containers
 logs: ## [api] Follow the logs
 	docker compose logs -f
 
+migrate: ## [api] Run database migrations via Docker
+	@echo "Running migrations via Docker..."
+	@docker compose exec -T postgres psql -U link_mgmt_user -d link_mgmt_db < link-mgmt-go/migrations/001_create_users.sql
+	@docker compose exec -T postgres psql -U link_mgmt_user -d link_mgmt_db < link-mgmt-go/migrations/002_create_links.sql
+	@echo "✓ Migrations completed"
+
 # Go delegation
 go-build-api go-build-cli go-build-all go-run-api go-run-cli go-test go-deps:
 	$(MAKE) -C link-mgmt-go $@

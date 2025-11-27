@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -16,6 +15,7 @@ func main() {
 		listMode   = flag.Bool("list", false, "List all links")
 		addMode    = flag.Bool("add", false, "Add a new link")
 		deleteMode = flag.Bool("delete", false, "Delete a link")
+		register   = flag.String("register", "", "Register a new user account (provide email)")
 
 		// Config commands
 		configShow = flag.Bool("config-show", false, "Show current configuration")
@@ -30,7 +30,7 @@ func main() {
 
 	app := cli.NewApp(cfg)
 
-	// Handle config commands first (don't need database)
+	// Handle config commands first (don't need API connection)
 	if *configShow {
 		app.ShowConfig()
 		return
@@ -43,14 +43,26 @@ func main() {
 		return
 	}
 
-	// For operations that need database, connect lazily
-	if *listMode || *addMode || *deleteMode {
-		ctx := context.Background()
-		database, err := app.ConnectDB(ctx)
-		if err != nil {
-			log.Fatalf("failed to connect to database: %v", err)
+	// Handle registration (needs API URL but not API key)
+	if *register != "" {
+		if cfg.CLI.APIBaseURL == "" {
+			log.Fatalf("API base URL not configured. Set it with: --config-set cli.api_base_url=<url>")
 		}
-		defer database.Close()
+		if err := app.RegisterUser(*register); err != nil {
+			log.Fatalf("failed to register user: %v", err)
+		}
+		return
+	}
+
+	// For operations that need API connection
+	if *listMode || *addMode || *deleteMode {
+		// Validate API configuration
+		if cfg.CLI.APIBaseURL == "" {
+			log.Fatalf("API base URL not configured. Set it with: --config-set cli.api_base_url=<url>")
+		}
+		if cfg.CLI.APIKey == "" {
+			log.Fatalf("API key not configured.\n\nTo get started:\n  1. Register a new account: --register <email>\n  2. Or set API key manually: --config-set cli.api_key=<key>")
+		}
 
 		if *listMode {
 			app.ListLinks()
@@ -62,7 +74,7 @@ func main() {
 		return
 	}
 
-	// Interactive TUI mode (will connect to DB when needed)
+	// Interactive TUI mode (will use API client when implemented)
 	if err := app.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
