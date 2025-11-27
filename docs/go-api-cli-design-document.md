@@ -1,5 +1,28 @@
 # Go API + CLI Design Document
 
+> **Implementation Status**: This document has been updated with current implementation status as of the latest review. Status markers:
+>
+> - ✅ **Implemented** - Feature is complete and working
+> - ⚠️ **Partially Implemented** - Feature exists but incomplete or missing some functionality
+> - ❌ **Not Implemented** - Feature is planned but not yet built
+
+## Quick Status Summary
+
+**Overall Progress**: ~70% Complete
+
+- ✅ **Core Infrastructure**: Models, database layer, configuration, API server structure
+- ✅ **API Endpoints**: GET/POST/DELETE for links, user management (missing PUT for updates)
+- ✅ **Middleware**: Authentication, error handling, logging
+- ⚠️ **CLI**: Basic structure and config commands work, but link management commands are stubs
+- ❌ **TUI**: Bubble Tea interactive interface not implemented
+- ❌ **Missing Features**: UpdateLink functionality, Dockerfile, cross-compilation targets
+
+**Additional Features Found** (not in original design):
+
+- ✅ `GetLinkByID` query and handler (GET `/api/v1/links/:id`)
+- ✅ CLI config management commands (`--config-show`, `--config-set`)
+- ✅ Health check endpoint (`/health`)
+
 ## Overview
 
 This document outlines the architecture and design for a Go-based link management system consisting of:
@@ -26,48 +49,41 @@ Following Go conventions for multi-binary projects:
 link-mgmt-go/
 ├── cmd/
 │   ├── api/
-│   │   └── main.go              # API server entry point
+│   │   └── main.go              # ✅ API server entry point
 │   └── cli/
-│       └── main.go              # CLI entry point
+│       └── main.go              # ✅ CLI entry point
 ├── pkg/
 │   ├── models/
-│   │   ├── user.go              # User model
-│   │   └── link.go              # Link model
+│   │   ├── user.go              # ✅ User model
+│   │   └── link.go              # ✅ Link model (includes LinkCreate, LinkUpdate)
 │   ├── db/
-│   │   ├── postgres.go          # Connection setup & pool
-│   │   └── queries.go           # Database queries (or sqlc generated)
+│   │   ├── postgres.go          # ✅ Connection setup & pool
+│   │   └── queries.go           # ⚠️ Database queries (missing UpdateLink)
 │   ├── api/
 │   │   ├── handlers/
-│   │   │   ├── users.go         # User API handlers
-│   │   │   └── links.go         # Link API handlers
+│   │   │   ├── users.go         # ✅ User API handlers
+│   │   │   ├── links.go         # ⚠️ Link API handlers (missing UpdateLink)
+│   │   │   └── health.go        # ✅ Health check handler
 │   │   ├── middleware/
-│   │   │   ├── auth.go          # API key authentication
-│   │   │   └── logging.go       # Request logging
-│   │   └── router.go            # HTTP router setup
+│   │   │   ├── auth.go          # ✅ API key authentication
+│   │   │   ├── error.go         # ✅ Error handling middleware
+│   │   │   └── logging.go       # ✅ Request logging
+│   │   └── router.go            # ⚠️ HTTP router setup (missing PUT /links/:id)
 │   ├── cli/
-│   │   ├── app.go               # Bubble Tea TUI application
-│   │   ├── models/
-│   │   │   ├── list.go          # Link list view model
-│   │   │   ├── form.go          # Add/edit form model
-│   │   │   └── help.go          # Help view model
-│   │   └── commands/
-│   │       ├── add.go           # Add link command
-│   │       ├── list.go          # List links command
-│   │       └── delete.go        # Delete link command
+│   │   ├── app.go               # ⚠️ Basic CLI app (TUI not implemented)
+│   │   └── models/              # ❌ TUI models directory exists but empty
 │   └── config/
-│       └── config.go            # Configuration management
+│       └── config.go            # ✅ Configuration management
 ├── migrations/
-│   ├── 001_create_users.sql
-│   ├── 002_create_links.sql
-│   └── 003_add_indexes.sql
+│   ├── 001_create_users.sql     # ✅ Users table migration
+│   └── 002_create_links.sql     # ✅ Links table migration
 ├── internal/
-│   └── auth/
-│       └── api_key.go           # API key generation/validation
-├── go.mod
-├── go.sum
-├── Makefile
-├── Dockerfile
-└── README.md
+│   └── auth/                    # ❌ Directory exists but empty (api_key.go not implemented)
+├── go.mod                       # ✅ Go module file
+├── go.sum                       # ✅ Go checksums
+├── Makefile                     # ⚠️ Basic build commands (missing cross-compilation targets)
+├── Dockerfile                   # ❌ Not implemented
+└── README.md                    # ✅ README with setup instructions
 ```
 
 ## Architecture Principles
@@ -106,9 +122,9 @@ import "link-mgmt-go/pkg/models"
 
 ## Shared Core Library (`pkg/`)
 
-### Models (`pkg/models/`)
+### Models (`pkg/models/`) ✅ **Implemented**
 
-#### User Model
+#### User Model ✅
 
 ```go
 // pkg/models/user.go
@@ -128,83 +144,27 @@ type User struct {
 }
 ```
 
-#### Link Model
+#### Link Model ✅
 
-```go
-// pkg/models/link.go
-package models
+**Status**: Fully implemented. Includes `Link`, `LinkCreate`, and `LinkUpdate` types.
 
-import (
-    "time"
-    "github.com/google/uuid"
-)
+### Database Layer (`pkg/db/`) ⚠️ **Partially Implemented**
 
-type Link struct {
-    ID          uuid.UUID  `db:"id" json:"id"`
-    UserID      uuid.UUID  `db:"user_id" json:"user_id"`
-    URL         string     `db:"url" json:"url"`
-    Title       *string    `db:"title" json:"title,omitempty"`
-    Description *string    `db:"description" json:"description,omitempty"`
-    Text        *string    `db:"text" json:"text,omitempty"`
-    CreatedAt   time.Time  `db:"created_at" json:"created_at"`
-    UpdatedAt   time.Time  `db:"updated_at" json:"updated_at"`
-}
+**Status**: Connection setup and most queries implemented. Missing `UpdateLink` function.
 
-// LinkCreate represents data for creating a new link
-type LinkCreate struct {
-    URL         string  `json:"url" validate:"required,url"`
-    Title       *string `json:"title,omitempty"`
-    Description *string `json:"description,omitempty"`
-    Text        *string `json:"text,omitempty"`
-}
+#### Connection Setup ✅
 
-// LinkUpdate represents data for updating a link
-type LinkUpdate struct {
-    URL         *string `json:"url,omitempty" validate:"omitempty,url"`
-    Title       *string `json:"title,omitempty"`
-    Description *string `json:"description,omitempty"`
-    Text        *string `json:"text,omitempty"`
-}
-```
+#### Query Functions ⚠️
 
-### Database Layer (`pkg/db/`)
+**Status**:
 
-#### Connection Setup
-
-```go
-// pkg/db/postgres.go
-package db
-
-import (
-    "context"
-    "fmt"
-    "github.com/jackc/pgx/v5/pgxpool"
-)
-
-type DB struct {
-    Pool *pgxpool.Pool
-}
-
-func New(ctx context.Context, connString string) (*DB, error) {
-    pool, err := pgxpool.New(ctx, connString)
-    if err != nil {
-        return nil, fmt.Errorf("failed to create connection pool: %w", err)
-    }
-
-    // Test connection
-    if err := pool.Ping(ctx); err != nil {
-        return nil, fmt.Errorf("failed to ping database: %w", err)
-    }
-
-    return &DB{Pool: pool}, nil
-}
-
-func (db *DB) Close() {
-    db.Pool.Close()
-}
-```
-
-#### Query Functions
+- ✅ `GetUserByAPIKey` - Implemented
+- ✅ `CreateUser` - Implemented
+- ✅ `GetLinksByUserID` - Implemented
+- ✅ `CreateLink` - Implemented
+- ✅ `GetLinkByID` - Implemented (not in design doc, but added)
+- ✅ `DeleteLink` - Implemented
+- ❌ `UpdateLink` - Not implemented
 
 ```go
 // pkg/db/queries.go
@@ -218,117 +178,8 @@ import (
     "github.com/jackc/pgx/v5"
 )
 
-// GetUserByAPIKey retrieves a user by their API key
-func (db *DB) GetUserByAPIKey(ctx context.Context, apiKey string) (*models.User, error) {
-    var user models.User
-    err := db.Pool.QueryRow(ctx,
-        `SELECT id, email, api_key, created_at, updated_at
-         FROM users WHERE api_key = $1`,
-        apiKey,
-    ).Scan(
-        &user.ID,
-        &user.Email,
-        &user.APIKey,
-        &user.CreatedAt,
-        &user.UpdatedAt,
-    )
-
-    if err == pgx.ErrNoRows {
-        return nil, fmt.Errorf("user not found")
-    }
-    if err != nil {
-        return nil, fmt.Errorf("failed to get user: %w", err)
-    }
-
-    return &user, nil
-}
-
-// CreateUser creates a new user
-func (db *DB) CreateUser(ctx context.Context, email, apiKey string) (*models.User, error) {
-    var user models.User
-    err := db.Pool.QueryRow(ctx,
-        `INSERT INTO users (email, api_key)
-         VALUES ($1, $2)
-         RETURNING id, email, api_key, created_at, updated_at`,
-        email, apiKey,
-    ).Scan(
-        &user.ID,
-        &user.Email,
-        &user.APIKey,
-        &user.CreatedAt,
-        &user.UpdatedAt,
-    )
-
-    if err != nil {
-        return nil, fmt.Errorf("failed to create user: %w", err)
-    }
-
-    return &user, nil
-}
-
-// GetLinksByUserID retrieves all links for a user
-func (db *DB) GetLinksByUserID(ctx context.Context, userID uuid.UUID) ([]models.Link, error) {
-    rows, err := db.Pool.Query(ctx,
-        `SELECT id, user_id, url, title, description, text, created_at, updated_at
-         FROM links
-         WHERE user_id = $1
-         ORDER BY created_at DESC`,
-        userID,
-    )
-    if err != nil {
-        return nil, fmt.Errorf("failed to query links: %w", err)
-    }
-    defer rows.Close()
-
-    var links []models.Link
-    for rows.Next() {
-        var link models.Link
-        err := rows.Scan(
-            &link.ID,
-            &link.UserID,
-            &link.URL,
-            &link.Title,
-            &link.Description,
-            &link.Text,
-            &link.CreatedAt,
-            &link.UpdatedAt,
-        )
-        if err != nil {
-            return nil, fmt.Errorf("failed to scan link: %w", err)
-        }
-        links = append(links, link)
-    }
-
-    return links, rows.Err()
-}
-
-// CreateLink creates a new link
-func (db *DB) CreateLink(ctx context.Context, userID uuid.UUID, link models.LinkCreate) (*models.Link, error) {
-    var created models.Link
-    err := db.Pool.QueryRow(ctx,
-        `INSERT INTO links (user_id, url, title, description, text)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, user_id, url, title, description, text, created_at, updated_at`,
-        userID, link.URL, link.Title, link.Description, link.Text,
-    ).Scan(
-        &created.ID,
-        &created.UserID,
-        &created.URL,
-        &created.Title,
-        &created.Description,
-        &created.Text,
-        &created.CreatedAt,
-        &created.UpdatedAt,
-    )
-
-    if err != nil {
-        return nil, fmt.Errorf("failed to create link: %w", err)
-    }
-
-    return &created, nil
-}
-
 // UpdateLink updates an existing link
+// ❌ NOT IMPLEMENTED - This function is missing from queries.go
 func (db *DB) UpdateLink(ctx context.Context, linkID, userID uuid.UUID, update models.LinkUpdate) (*models.Link, error) {
     // Build dynamic update query
     // Implementation details...
@@ -352,253 +203,21 @@ func (db *DB) DeleteLink(ctx context.Context, linkID, userID uuid.UUID) error {
 }
 ```
 
-### Configuration (`pkg/config/`)
+### Configuration (`pkg/config/`) ✅ **Implemented**
 
-```go
-// pkg/config/config.go
-package config
-
-import (
-    "fmt"
-    "os"
-    "path/filepath"
-    "strings"
-
-    "github.com/pelletier/go-toml/v2"
-)
-
-type Config struct {
-    // Database
-    Database struct {
-        URL string `toml:"url"`
-    } `toml:"database"`
-
-    // API
-    API struct {
-        Port int    `toml:"port"`
-        Host string `toml:"host"`
-    } `toml:"api"`
-
-    // CLI
-    CLI struct {
-        APIBaseURL string `toml:"api_base_url"`
-        APIKey     string `toml:"api_key"`
-    } `toml:"cli"`
-}
-
-// DefaultConfig returns a config with default values
-func DefaultConfig() *Config {
-    cfg := &Config{}
-    cfg.Database.URL = "postgres://localhost/linkmgmt?sslmode=disable"
-    cfg.API.Port = 8080
-    cfg.API.Host = "0.0.0.0"
-    cfg.CLI.APIBaseURL = "http://localhost:8080"
-    cfg.CLI.APIKey = ""
-    return cfg
-}
-
-// ConfigPath returns the path to the config file
-func ConfigPath() (string, error) {
-    homeDir, err := os.UserHomeDir()
-    if err != nil {
-        return "", fmt.Errorf("failed to get home directory: %w", err)
-    }
-    configDir := filepath.Join(homeDir, ".config", "link-mgmt")
-    return filepath.Join(configDir, "config.toml"), nil
-}
-
-// Load reads configuration from ~/.config/link-mgmt/config.toml
-// Creates the file with defaults if it doesn't exist
-func Load() (*Config, error) {
-    configPath, err := ConfigPath()
-    if err != nil {
-        return nil, err
-    }
-
-    // Expand ~ in path if needed
-    if strings.HasPrefix(configPath, "~") {
-        homeDir, err := os.UserHomeDir()
-        if err != nil {
-            return nil, fmt.Errorf("failed to get home directory: %w", err)
-        }
-        configPath = strings.Replace(configPath, "~", homeDir, 1)
-    }
-
-    // Check if config file exists
-    if _, err := os.Stat(configPath); os.IsNotExist(err) {
-        // Create directory if it doesn't exist
-        configDir := filepath.Dir(configPath)
-        if err := os.MkdirAll(configDir, 0755); err != nil {
-            return nil, fmt.Errorf("failed to create config directory: %w", err)
-        }
-
-        // Create default config file
-        cfg := DefaultConfig()
-        if err := Save(cfg); err != nil {
-            return nil, fmt.Errorf("failed to create default config: %w", err)
-        }
-        return cfg, nil
-    }
-
-    // Read existing config file
-    data, err := os.ReadFile(configPath)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read config file: %w", err)
-    }
-
-    var cfg Config
-    if err := toml.Unmarshal(data, &cfg); err != nil {
-        return nil, fmt.Errorf("failed to parse config file: %w", err)
-    }
-
-    // Merge with defaults for any missing values
-    defaultCfg := DefaultConfig()
-    if cfg.Database.URL == "" {
-        cfg.Database.URL = defaultCfg.Database.URL
-    }
-    if cfg.API.Port == 0 {
-        cfg.API.Port = defaultCfg.API.Port
-    }
-    if cfg.API.Host == "" {
-        cfg.API.Host = defaultCfg.API.Host
-    }
-    if cfg.CLI.APIBaseURL == "" {
-        cfg.CLI.APIBaseURL = defaultCfg.CLI.APIBaseURL
-    }
-
-    return &cfg, nil
-}
-
-// Save writes the configuration to the config file
-func Save(cfg *Config) error {
-    configPath, err := ConfigPath()
-    if err != nil {
-        return err
-    }
-
-    // Expand ~ in path if needed
-    if strings.HasPrefix(configPath, "~") {
-        homeDir, err := os.UserHomeDir()
-        if err != nil {
-            return fmt.Errorf("failed to get home directory: %w", err)
-        }
-        configPath = strings.Replace(configPath, "~", homeDir, 1)
-    }
-
-    // Create directory if it doesn't exist
-    configDir := filepath.Dir(configPath)
-    if err := os.MkdirAll(configDir, 0755); err != nil {
-        return fmt.Errorf("failed to create config directory: %w", err)
-    }
-
-    // Marshal to TOML
-    data, err := toml.Marshal(cfg)
-    if err != nil {
-        return fmt.Errorf("failed to marshal config: %w", err)
-    }
-
-    // Write to file
-    if err := os.WriteFile(configPath, data, 0644); err != nil {
-        return fmt.Errorf("failed to write config file: %w", err)
-    }
-
-    return nil
-}
-```
-
-Example `~/.config/link-mgmt/config.toml`:
-
-```toml
-[database]
-url = "postgres://localhost/linkmgmt?sslmode=disable"
-
-[api]
-host = "0.0.0.0"
-port = 8080
-
-[cli]
-api_base_url = "http://localhost:8080"
-api_key = ""
-```
+**Status**: Fully implemented with auto-creation of config file, defaults, and save functionality.
 
 **Note:** The config file will be automatically created with defaults on first run if it doesn't exist.
 
-## API Server (`cmd/api/`)
+## API Server (`cmd/api/`) ✅ **Implemented**
 
-### Entry Point
+**Status**: Entry point, router, handlers, and middleware are implemented. Missing `UpdateLink` handler and route.
 
-```go
-// cmd/api/main.go
-package main
+### Entry Point ✅
 
-import (
-    "context"
-    "fmt"
-    "log"
-    "net/http"
-    "os"
-    "os/signal"
-    "syscall"
-    "time"
+### Router Setup ⚠️
 
-    "link-mgmt-go/pkg/api"
-    "link-mgmt-go/pkg/config"
-    "link-mgmt-go/pkg/db"
-)
-
-func main() {
-    cfg, err := config.Load()
-    if err != nil {
-        log.Fatalf("failed to load config: %v", err)
-    }
-
-    ctx := context.Background()
-
-    // Initialize database
-    database, err := db.New(ctx, cfg.Database.URL)
-    if err != nil {
-        log.Fatalf("failed to connect to database: %v", err)
-    }
-    defer database.Close()
-
-    // Initialize router
-    router := api.NewRouter(database)
-
-    // Create server
-    srv := &http.Server{
-        Addr:         fmt.Sprintf("%s:%d", cfg.API.Host, cfg.API.Port),
-        Handler:      router,
-        ReadTimeout:  15 * time.Second,
-        WriteTimeout: 15 * time.Second,
-        IdleTimeout:  60 * time.Second,
-    }
-
-    // Start server in goroutine
-    go func() {
-        log.Printf("API server starting on %s", srv.Addr)
-        if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-            log.Fatalf("server failed: %v", err)
-        }
-    }()
-
-    // Graceful shutdown
-    quit := make(chan os.Signal, 1)
-    signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-    <-quit
-
-    log.Println("shutting down server...")
-    ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-    defer cancel()
-
-    if err := srv.Shutdown(ctx); err != nil {
-        log.Fatalf("server forced to shutdown: %v", err)
-    }
-
-    log.Println("server exited")
-}
-```
-
-### Router Setup
+**Status**: Router implemented with Gin. Missing `PUT /api/v1/links/:id` route for updating links.
 
 ```go
 // pkg/api/router.go
@@ -632,7 +251,7 @@ func NewRouter(db *db.DB) *gin.Engine {
             links.GET("", handlers.ListLinks(db))
             links.POST("", handlers.CreateLink(db))
             links.GET("/:id", handlers.GetLink(db))
-            links.PUT("/:id", handlers.UpdateLink(db))
+            // ❌ Missing: links.PUT("/:id", handlers.UpdateLink(db))
             links.DELETE("/:id", handlers.DeleteLink(db))
         }
 
@@ -648,161 +267,40 @@ func NewRouter(db *db.DB) *gin.Engine {
 }
 ```
 
-### Handlers
+### Handlers ⚠️
 
-```go
-// pkg/api/handlers/links.go
-package handlers
+**Status**:
 
-import (
-    "net/http"
-    "link-mgmt-go/pkg/db"
-    "link-mgmt-go/pkg/models"
+- ✅ `ListLinks` - Implemented
+- ✅ `CreateLink` - Implemented
+- ✅ `GetLink` - Implemented (not in design doc, but added)
+- ❌ `UpdateLink` - Not implemented
+- ✅ `DeleteLink` - Implemented
+- ✅ `CreateUser` - Implemented
+- ✅ `GetCurrentUser` - Implemented
 
-    "github.com/gin-gonic/gin"
-    "github.com/google/uuid"
-)
+### Middleware ✅ **Implemented**
 
-func ListLinks(db *db.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        userID := c.MustGet("userID").(uuid.UUID)
+**Status**: All middleware components are implemented:
 
-        links, err := db.GetLinksByUserID(c.Request.Context(), userID)
-        if err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-            return
-        }
+- ✅ `RequireAuth` - API key authentication
+- ✅ `ErrorHandler` - Error recovery middleware
+- ✅ `RequestLogger` - Request logging
 
-        c.JSON(http.StatusOK, links)
-    }
-}
+## CLI Application (`cmd/cli/`) ⚠️ **Partially Implemented**
 
-func CreateLink(db *db.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        userID := c.MustGet("userID").(uuid.UUID)
+**Status**: Entry point and basic app structure exist. TUI (Bubble Tea) not implemented. CLI commands (`--list`, `--add`, `--delete`) are stubs. Config commands (`--config-show`, `--config-set`) are implemented.
 
-        var linkCreate models.LinkCreate
-        if err := c.ShouldBindJSON(&linkCreate); err != nil {
-            c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-            return
-        }
+### Entry Point ✅
 
-        link, err := db.CreateLink(c.Request.Context(), userID, linkCreate)
-        if err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-            return
-        }
+**Note**: Entry point includes additional config management commands not in design doc:
 
-        c.JSON(http.StatusCreated, link)
-    }
-}
+- `--config-show` - Show current configuration
+- `--config-set` - Set config values
 
-// Additional handlers: GetLink, UpdateLink, DeleteLink
-```
+### Bubble Tea TUI Application ❌ **Not Implemented**
 
-### Middleware
-
-```go
-// pkg/api/middleware/auth.go
-package middleware
-
-import (
-    "net/http"
-    "strings"
-    "link-mgmt-go/pkg/db"
-
-    "github.com/gin-gonic/gin"
-)
-
-func RequireAuth(db *db.DB) gin.HandlerFunc {
-    return func(c *gin.Context) {
-        authHeader := c.GetHeader("Authorization")
-        if authHeader == "" {
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
-            c.Abort()
-            return
-        }
-
-        // Extract API key from "Bearer <key>" or just "<key>"
-        apiKey := strings.TrimPrefix(authHeader, "Bearer ")
-        apiKey = strings.TrimSpace(apiKey)
-
-        user, err := db.GetUserByAPIKey(c.Request.Context(), apiKey)
-        if err != nil {
-            c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid API key"})
-            c.Abort()
-            return
-        }
-
-        c.Set("userID", user.ID)
-        c.Set("user", user)
-        c.Next()
-    }
-}
-```
-
-## CLI Application (`cmd/cli/`)
-
-### Entry Point
-
-```go
-// cmd/cli/main.go
-package main
-
-import (
-    "context"
-    "flag"
-    "fmt"
-    "log"
-    "os"
-
-    "link-mgmt-go/pkg/cli"
-    "link-mgmt-go/pkg/config"
-    "link-mgmt-go/pkg/db"
-)
-
-func main() {
-    var (
-        listMode   = flag.Bool("list", false, "List all links")
-        addMode    = flag.Bool("add", false, "Add a new link")
-        deleteMode = flag.Bool("delete", false, "Delete a link")
-        interactive = flag.Bool("i", true, "Interactive mode (default)")
-    )
-    flag.Parse()
-
-    cfg, err := config.Load()
-    if err != nil {
-        log.Fatalf("failed to load config: %v", err)
-    }
-
-    // For CLI, we might connect to API instead of DB directly
-    // Or connect to DB for direct access
-    ctx := context.Background()
-    database, err := db.New(ctx, cfg.Database.URL)
-    if err != nil {
-        log.Fatalf("failed to connect to database: %v", err)
-    }
-    defer database.Close()
-
-    app := cli.NewApp(database, cfg)
-
-    if *listMode {
-        app.ListLinks()
-    } else if *addMode {
-        app.AddLink()
-    } else if *deleteMode {
-        app.DeleteLink()
-    } else {
-        // Interactive TUI mode
-        if err := app.Run(); err != nil {
-            fmt.Fprintf(os.Stderr, "error: %v\n", err)
-            os.Exit(1)
-        }
-    }
-}
-```
-
-### Bubble Tea TUI Application
+**Status**: Basic app structure exists, but TUI functionality is not implemented. The `Run()` method just prints a "coming soon" message. TUI models directory exists but is empty.
 
 ```go
 // pkg/cli/app.go
@@ -838,19 +336,21 @@ func (a *App) Run() error {
 }
 
 func (a *App) ListLinks() {
-    // Non-interactive list mode
+    // ❌ Stub implementation - just prints "coming soon"
 }
 
 func (a *App) AddLink() {
-    // Non-interactive add mode
+    // ❌ Stub implementation - just prints "coming soon"
 }
 
 func (a *App) DeleteLink() {
-    // Non-interactive delete mode
+    // ❌ Stub implementation - just prints "coming soon"
 }
 ```
 
-### TUI Models
+### TUI Models ❌ **Not Implemented**
+
+**Status**: The `pkg/cli/models/` directory exists but is empty. None of the TUI models (list.go, form.go, help.go) are implemented.
 
 ```go
 // pkg/cli/models/list.go
@@ -997,47 +497,15 @@ func (m ListModel) loadLinks() tea.Cmd {
 }
 ```
 
-## Database Migrations
+## Database Migrations ✅ **Implemented**
 
-Using `golang-migrate`:
-
-```sql
--- migrations/001_create_users.sql
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    email VARCHAR(255) NOT NULL UNIQUE,
-    api_key VARCHAR(255) NOT NULL UNIQUE,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_api_key ON users(api_key);
-```
-
-```sql
--- migrations/002_create_links.sql
-CREATE TABLE links (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    url TEXT NOT NULL,
-    title TEXT,
-    description TEXT,
-    text TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    UNIQUE(user_id, url)
-);
-
-CREATE INDEX idx_links_user_id ON links(user_id);
-CREATE INDEX idx_links_created_at ON links(created_at DESC);
-```
+**Status**: Both migrations are implemented. Note: The design doc mentions `003_add_indexes.sql`, but indexes are included in the first two migration files.
 
 ## Build & Distribution
 
-### Makefile
+### Makefile ⚠️ **Partially Implemented**
+
+**Status**: Basic build commands are implemented. Missing cross-compilation targets (`build-release`) and migration commands.
 
 ```makefile
 # Makefile
@@ -1054,27 +522,18 @@ build-cli:
 # Build both
 build-all: build-api build-cli
 
-# Cross-compile for multiple platforms
-build-release:
-	GOOS=linux GOARCH=amd64 go build -o bin/api-linux-amd64 ./cmd/api
-	GOOS=linux GOARCH=amd64 go build -o bin/cli-linux-amd64 ./cmd/cli
-	GOOS=darwin GOARCH=amd64 go build -o bin/api-darwin-amd64 ./cmd/api
-	GOOS=darwin GOARCH=amd64 go build -o bin/cli-darwin-amd64 ./cmd/cli
-	GOOS=darwin GOARCH=arm64 go build -o bin/api-darwin-arm64 ./cmd/api
-	GOOS=darwin GOARCH=arm64 go build -o bin/cli-darwin-arm64 ./cmd/cli
-	GOOS=windows GOARCH=amd64 go build -o bin/api-windows-amd64.exe ./cmd/api
-	GOOS=windows GOARCH=amd64 go build -o bin/cli-windows-amd64.exe ./cmd/cli
+# ❌ Cross-compile for multiple platforms - NOT IMPLEMENTED
+# build-release:
+#	GOOS=linux GOARCH=amd64 go build -o bin/api-linux-amd64 ./cmd/api
+#	...
 
-# Run tests
+# ✅ Run tests - IMPLEMENTED
 test:
 	go test ./...
 
-# Database migrations
-migrate-up:
-	migrate -path migrations -database "$(DATABASE_URL)" up
-
-migrate-down:
-	migrate -path migrations -database "$(DATABASE_URL)" down
+# ❌ Database migrations - NOT IMPLEMENTED (migrations run manually via psql)
+# migrate-up:
+#	migrate -path migrations -database "$(DATABASE_URL)" up
 
 # Run API
 run-api:
@@ -1090,7 +549,9 @@ deps:
 	go mod tidy
 ```
 
-### Dockerfile
+### Dockerfile ❌ **Not Implemented**
+
+**Status**: Dockerfile is not present in the repository.
 
 ```dockerfile
 # Dockerfile
@@ -1171,54 +632,58 @@ sql:
 
 ## Key Design Decisions
 
-### 1. Framework Choice: Gin vs stdlib
+### 1. Framework Choice: Gin vs stdlib ✅ **Gin Selected**
 
-**Recommendation: Start with stdlib, add Gin if needed**
+**Status**: Gin was chosen and implemented.
 
 - **stdlib**: Zero dependencies, full control, good for learning
 - **Gin**: Faster development, middleware ecosystem, good for production
 
-For this project, **Gin is recommended** for:
+**Implementation**: Gin is used throughout the API:
 
-- Better middleware support (auth, logging, CORS)
-- JSON binding/validation
-- Route grouping
-- Still lightweight (~2MB binary)
+- ✅ Middleware support (auth, logging, error handling)
+- ✅ JSON binding/validation
+- ✅ Route grouping
+- ✅ Lightweight (~2MB binary)
 
-### 2. Database Access: pgx vs ORM
+### 2. Database Access: pgx vs ORM ✅ **pgx Selected**
 
-**Recommendation: pgx with optional sqlc**
+**Status**: pgx is implemented. sqlc not used (queries written manually).
 
-- **pgx**: Direct PostgreSQL access, excellent performance, native types
-- **sqlc**: Generate type-safe code from SQL (optional enhancement)
-- **Avoid GORM**: Too much magic, performance overhead
+- **pgx**: ✅ Direct PostgreSQL access, excellent performance, native types
+- **sqlc**: ❌ Not used (queries written manually in queries.go)
+- **Avoid GORM**: Not used
 
-### 3. CLI: Bubble Tea vs Cobra
+### 3. CLI: Bubble Tea vs Cobra ⚠️ **Basic Implementation**
 
-**Recommendation: Bubble Tea for TUI, Cobra for CLI commands**
+**Status**: Basic flag-based CLI implemented. Bubble Tea TUI not yet implemented.
 
-- **Bubble Tea**: Excellent for interactive TUI (list, forms, navigation)
-- **Cobra**: Better for traditional CLI commands (`link add`, `link list`)
-- **Hybrid approach**: Use both - Cobra for commands, Bubble Tea for interactive mode
+- **Bubble Tea**: ❌ Not implemented (dependency present but TUI not built)
+- **Cobra**: ❌ Not used
+- **Current approach**: ⚠️ Standard library `flag` package for CLI commands
+- **Future**: Bubble Tea planned for interactive mode
 
-### 4. Configuration Management
+### 4. Configuration Management ✅ **TOML Implemented**
 
-**Recommendation: TOML config file**
+**Status**: Fully implemented with TOML config file.
 
-- Single config file at `~/.config/link-mgmt/config.toml` for all settings
-- Auto-created with sensible defaults on first run
-- TOML format is human-readable and easy to edit
-- Use `github.com/pelletier/go-toml/v2` for parsing
-- Both API and CLI read from the same config file
-- API key stored in config file (consider keychain integration for production)
+- ✅ Single config file at `~/.config/link-mgmt/config.toml` for all settings
+- ✅ Auto-created with sensible defaults on first run
+- ✅ TOML format is human-readable and easy to edit
+- ✅ Uses `github.com/pelletier/go-toml/v2` for parsing
+- ✅ Both API and CLI read from the same config file
+- ✅ CLI includes `--config-show` and `--config-set` commands for managing config
+- ⚠️ API key stored in config file (keychain integration not implemented)
 
-### 5. Authentication
+### 5. Authentication ⚠️ **API Key Implemented (Unhashed)**
 
-**Recommendation: API key authentication**
+**Status**: API key authentication implemented, but keys are stored unhashed.
 
-- Simple, stateless, works for both API and CLI
-- Store hashed API keys in database
-- CLI can store API key in config file or keychain
+- ✅ Simple, stateless, works for both API and CLI
+- ⚠️ API keys stored **unhashed** in database (security concern for production)
+- ✅ CLI stores API key in config file
+- ❌ Keychain integration not implemented
+- ⚠️ API key generation in handlers/users.go (should be in internal/auth/)
 
 ## Performance Considerations
 
@@ -1254,11 +719,46 @@ For this project, **Gin is recommended** for:
     - Package managers (Linux)
     - Direct download
 
+## Implementation Summary
+
+### ✅ Completed (Phase 1 - Core Library + API)
+
+- ✅ Models (User, Link, LinkCreate, LinkUpdate)
+- ✅ Database layer (connection, most queries)
+- ✅ Configuration management
+- ✅ API server entry point
+- ✅ Router setup (missing UpdateLink route)
+- ✅ Handlers (ListLinks, CreateLink, GetLink, DeleteLink, CreateUser, GetCurrentUser)
+- ✅ Middleware (auth, error handling, logging)
+- ✅ Database migrations
+- ✅ CLI entry point with config commands
+
+### ⚠️ Partially Complete
+
+- ⚠️ Database queries (missing `UpdateLink`)
+- ⚠️ API router (missing PUT route)
+- ⚠️ CLI app (structure exists, but commands are stubs)
+- ⚠️ Makefile (basic commands only, missing cross-compilation)
+
+### ❌ Not Implemented
+
+- ❌ `UpdateLink` database query and handler
+- ❌ PUT `/api/v1/links/:id` route
+- ❌ CLI commands (`--list`, `--add`, `--delete` implementations)
+- ❌ Bubble Tea TUI (interactive mode)
+- ❌ TUI models (list.go, form.go, help.go)
+- ❌ Internal auth package (api_key.go)
+- ❌ Dockerfile
+- ❌ Cross-compilation build targets
+- ❌ Migration tooling (golang-migrate integration)
+
 ## Next Steps
 
-1. **Phase 1**: Core library + API (models, DB, handlers)
-2. **Phase 2**: CLI basic commands (list, add, delete)
-3. **Phase 3**: Interactive TUI with Bubble Tea
+1. **Phase 1 Remaining**:
+   - Implement `UpdateLink` query and handler
+   - Add PUT route to router
+2. **Phase 2**: CLI basic commands (list, add, delete) - currently stubs
+3. **Phase 3**: Interactive TUI with Bubble Tea - not started
 4. **Phase 4**: Advanced features (search, tags, export)
 
 ## References
