@@ -53,7 +53,7 @@ This document outlines the implementation plan for completing the Go CLI applica
 
 **Structure**:
 
-```
+```bash
 pkg/cli/client/
 ├── client.go      # HTTP client setup and base methods
 ├── links.go       # Link-related API calls
@@ -95,7 +95,7 @@ pkg/cli/client/
 
 **Output Format**:
 
-```
+```text
 ID                                    URL                              Title                Created
 ───────────────────────────────────── ──────────────────────────────── ──────────────────── ──────────────
 550e8400-e29b-41d4-a716-446655440000 https://example.com               Example Site         2024-01-15
@@ -127,16 +127,52 @@ ID                                    URL                              Title    
 **Input Methods** (choose one):
 
 1. **Command-line flags**: `--add --url <url> --title <title> --desc <desc>`
-2. **Interactive prompts**: Prompt for each field
+2. **Interactive prompts**: Prompt for each field using Bubble Tea components
 3. **Both**: Support flags, prompt for missing required fields
 
-**Recommendation**: Start with interactive prompts, add flags later.
+**Recommendation**: Start with interactive prompts using Bubble Tea, add flags later.
+
+**Implementation Approach**:
+
+- Use Bubble Tea's `textinput` component for single-line fields (URL, Title, Description)
+- Use Bubble Tea's `textarea` component for multi-line Text field
+- Create a simple Bubble Tea program that prompts for each field sequentially
+- This approach provides consistency with Phase 3 and uses maintained libraries
 
 **Dependencies**:
 
-- `bufio` or `github.com/AlecAivazis/survey/v2` for prompts
+- `github.com/charmbracelet/bubbletea` - TUI framework (already present)
+- `github.com/charmbracelet/bubbles/textinput` - Text input component for prompts
+- `github.com/charmbracelet/bubbles/textarea` - Multi-line text input (for Text field)
 
-### 2.4 Implement `--delete` Command
+**Note**: Using Bubble Tea components instead of the archived `survey/v2` library. This provides consistency with Phase 3 and a modern, maintained solution.
+
+### 2.4 User Registration (Bonus Feature) ✅ **COMPLETE**
+
+**Location**: `pkg/cli/app.go`, `pkg/cli/client/users.go`
+
+**Functionality**:
+
+- `--register <email>` command creates a new user account
+- Automatically saves API key to config after registration
+- No authentication required (public endpoint)
+- Improved error messages with migration instructions
+
+**Implementation**:
+
+- Added `CreateUser()` method to HTTP client
+- Added `RegisterUser()` method to CLI app
+- Added `getClientForRegistration()` for unauthenticated requests
+- Automatically saves API key to `~/.config/link-mgmt/config.toml`
+- Displays user info and API key after successful registration
+
+**Error Handling**:
+
+- Detects missing database tables
+- Provides helpful Makefile command instructions
+- Clear error messages for validation failures
+
+### 2.5 Implement `--delete` Command
 
 **Location**: `pkg/cli/app.go`
 
@@ -282,16 +318,19 @@ Are you sure you want to delete "Example Site"? (y/N): y
 
 5. **Step 4**: Implement `--add` command ⚠️ **PENDING**
 
-   - [ ] Add prompt library dependency
-   - [ ] Interactive prompts
-   - [ ] Validate input
-   - [ ] Call API
+   - [ ] Use Bubble Tea textinput/textarea components for prompts
+   - [ ] Interactive prompts for URL (required), Title, Description, Text (optional)
+   - [ ] Validate URL format
+   - [ ] Call `client.CreateLink()` API
+   - [ ] Display success message with created link details
 
 6. **Step 5**: Implement `--delete` command ⚠️ **PENDING**
-   - [ ] Fetch and display links
-   - [ ] Selection prompt
-   - [ ] Confirmation
-   - [ ] Delete via API
+   - [ ] Fetch links via `client.ListLinks()`
+   - [ ] Display numbered list using Bubble Tea
+   - [ ] Selection prompt (can use simple Bubble Tea program or textinput)
+   - [ ] Confirmation prompt
+   - [ ] Call `client.DeleteLink(id)` API
+   - [ ] Display success message
 
 ### Future (Phase 3)
 
@@ -299,21 +338,21 @@ Are you sure you want to delete "Example Site"? (y/N): y
 7. **Step 7**: TUI FormModel
 8. **Step 8**: TUI integration
 
-## Dependencies to Add
+## Dependencies
 
 ```go
-// For HTTP client
-- net/http (stdlib)
-- encoding/json (stdlib)
+// For HTTP client (stdlib)
+- net/http
+- encoding/json
 
-// For interactive prompts (Phase 2.3, 2.4)
-- github.com/AlecAivazis/survey/v2
+// For interactive prompts and TUI (Phase 2 & 3)
+- github.com/charmbracelet/bubbletea (already present)
+- github.com/charmbracelet/bubbles/textinput (already present)
+- github.com/charmbracelet/bubbles/textarea (already present)
+- github.com/charmbracelet/bubbles/list (already present, for Phase 3)
 
-// Already present for TUI
-- github.com/charmbracelet/bubbletea
-- github.com/charmbracelet/bubbles/list
-- github.com/charmbracelet/bubbles/textinput
-- github.com/charmbracelet/bubbles/textarea
+// Note: Using Bubble Tea instead of archived survey/v2 library
+// Reference: https://github.com/charmbracelet/bubbletea
 ```
 
 ## Testing Strategy
@@ -351,7 +390,7 @@ Are you sure you want to delete "Example Site"? (y/N): y
 - ✅ `cmd/cli/main.go` - Added `--register` flag, improved error messages
 - ✅ `Makefile` (root) - Added `migrate` command
 - ✅ `link-mgmt-go/Makefile` - Added migration commands
-- `go.mod` - Will need survey dependency for Phase 2.3
+- `go.mod` - Bubble Tea dependencies already present (no new dependencies needed)
 
 ### Removed ✅
 
@@ -380,7 +419,11 @@ Are you sure you want to delete "Example Site"? (y/N): y
 
 ## Notes
 
-- Start with Phase 2 (basic commands) before TUI
-- HTTP client should be reusable for TUI
-- Consider making TUI optional (use `--tui` flag) vs default
-- Keep database connection code as fallback for admin/debug tools
+- ✅ Database connection code completely removed from CLI (uses HTTP API only)
+- ✅ HTTP client is reusable for TUI (Phase 3)
+- ✅ User registration workflow implemented and tested
+- ✅ Migration commands added to Makefile for easier setup
+- ✅ Using Bubble Tea for prompts (instead of archived survey/v2) - provides consistency with Phase 3
+- Consider making TUI optional (use `--tui` flag) vs default in Phase 3
+- All Phase 2 commands should use HTTP client (consistent architecture)
+- Bubble Tea components (textinput, textarea) can be used for simple prompts in Phase 2, making the transition to full TUI in Phase 3 smoother
