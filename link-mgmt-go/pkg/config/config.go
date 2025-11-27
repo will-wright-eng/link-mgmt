@@ -29,9 +29,10 @@ type Config struct {
 }
 
 // DefaultConfig returns a config with default values
+// Database defaults match docker-compose.yml settings
 func DefaultConfig() *Config {
 	cfg := &Config{}
-	cfg.Database.URL = "postgres://localhost/linkmgmt?sslmode=disable"
+	cfg.Database.URL = "postgres://link_mgmt_user:link_mgmt_pwd@localhost:5432/link_mgmt_db?sslmode=disable"
 	cfg.API.Port = 8080
 	cfg.API.Host = "0.0.0.0"
 	cfg.CLI.APIBaseURL = "http://localhost:8080"

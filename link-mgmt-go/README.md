@@ -27,16 +27,39 @@ link-mgmt-go/
    go mod download
    ```
 
-2. **Configure database:**
-   - Edit `~/.config/link-mgmt/config.toml` (auto-created on first run)
-   - Set your PostgreSQL connection string
-
-3. **Run migrations:**
+2. **Start PostgreSQL (using docker-compose):**
 
    ```bash
-   # Using psql or your preferred migration tool
-   psql -d linkmgmt -f migrations/001_create_users.sql
-   psql -d linkmgmt -f migrations/002_create_links.sql
+   # From the project root
+   docker compose up -d
+   ```
+
+   This starts PostgreSQL with:
+   - Database: `link_mgmt`
+   - User: `link_mgmt`
+   - Password: `link_mgmt`
+   - Port: `5432`
+
+3. **Configure database connection:**
+
+   The config file is auto-created at `~/.config/link-mgmt/config.toml` with defaults matching docker-compose.
+
+   You can view/update config using the CLI:
+
+   ```bash
+   # View current config
+   ./bin/cli --config-show
+
+   # Update database URL
+   ./bin/cli --config-set 'database.url=postgres://link_mgmt:link_mgmt@localhost:5432/link_mgmt?sslmode=disable'
+   ```
+
+4. **Run migrations:**
+
+   ```bash
+   # Using psql with docker-compose credentials
+   PGPASSWORD=link_mgmt psql -h localhost -U link_mgmt -d link_mgmt -f migrations/001_create_users.sql
+   PGPASSWORD=link_mgmt psql -h localhost -U link_mgmt -d link_mgmt -f migrations/002_create_links.sql
    ```
 
 ## Running
@@ -54,6 +77,14 @@ The API will start on `http://localhost:8080` (configurable in config.toml)
 ```bash
 go run ./cmd/cli
 ```
+
+**CLI Commands:**
+
+- `--config-show` - Show current configuration (no database connection required)
+- `--config-set <section.key=value>` - Set a config value (no database connection required)
+- `--list` - List all links (requires database)
+- `--add` - Add a new link (requires database)
+- `--delete` - Delete a link (requires database)
 
 ## API Endpoints
 
@@ -79,7 +110,7 @@ Configuration is stored in `~/.config/link-mgmt/config.toml`:
 
 ```toml
 [database]
-url = "postgres://localhost/linkmgmt?sslmode=disable"
+url = "postgres://link_mgmt:link_mgmt@localhost:5432/link_mgmt?sslmode=disable"
 
 [api]
 host = "0.0.0.0"
@@ -89,3 +120,5 @@ port = 8080
 api_base_url = "http://localhost:8080"
 api_key = ""
 ```
+
+**Note:** The default config matches the docker-compose.yml PostgreSQL settings. You can manage the config file using the CLI commands above without requiring a database connection.
