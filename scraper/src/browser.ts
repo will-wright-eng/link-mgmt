@@ -1,4 +1,5 @@
-import { chromium, Browser, BrowserContext } from "playwright";
+import { chromium } from "playwright";
+import type { Browser, BrowserContext } from "playwright";
 
 export class BrowserManager {
   private browser: Browser | null = null;
