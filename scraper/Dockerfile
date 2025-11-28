@@ -1,4 +1,10 @@
-FROM mcr.microsoft.com/playwright:v1.56.1-focal
+FROM mcr.microsoft.com/playwright:v1.57.0-noble
+
+# Install dependencies required for Bun installation
+RUN apt-get update && \
+    apt-get install -y curl unzip && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install Bun
 RUN curl -fsSL https://bun.sh/install | bash

@@ -6,6 +6,11 @@ help: ## list make commands
 	@echo "Root commands:"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
+	@echo "Environment Profiles:"
+	@echo "  [dev]  - Development profile with hot reloading"
+	@echo "  [prod] - Production profile with optimized builds"
+	@echo "  [db]   - Database operations"
+	@echo ""
 	@echo "Scraper commands (scraper/):"
 	@$(MAKE) -C scraper help 2>/dev/null | grep -v "^make" || true
 	@echo ""
@@ -23,23 +28,45 @@ clean: ## Clean up
 	find . -type f -name "*.test" -exec rm -f {} +
 	find . -type f -name "*.out" -exec rm -f {} +
 
-# docker commands
-up: ## [api] Start the containers
-	docker compose up --build --remove-orphans
+# docker commands - development profile
+dev-up: ## [dev] Start development containers (with hot reloading)
+	docker compose --profile dev up --build --remove-orphans
 
-upd: ## [api] Start the containers in detached mode
-	docker compose up -d
+dev-upd: ## [dev] Start development containers in detached mode
+	docker compose --profile dev up -d --build
 
-down: ## [api] Stop the containers
-	docker compose down
+dev-down: ## [dev] Stop development containers
+	docker compose --profile dev down
 
-purge: ## [api] Purge the containers
-	docker compose down -v
+dev-logs: ## [dev] Follow development container logs
+	docker compose --profile dev logs -f
 
-logs: ## [api] Follow the logs
+dev-logs-scraper: ## [dev] Follow scraper development logs
+	docker compose --profile dev logs -f scraper-dev
+
+# docker commands - legacy (defaults to prod)
+up: ## [prod] Start production containers (alias for prod-up)
+	docker compose --profile prod up --build --remove-orphans
+
+upd: ## [prod] Start production containers in detached mode (alias for prod-upd)
+	docker compose --profile prod up -d --build
+
+down: ## Stop all containers (dev and prod)
+	docker compose down --remove-orphans
+
+purge: ## Purge all containers and volumes
+	docker compose down -v --remove-orphans
+
+logs: ## Follow logs from all containers
 	docker compose logs -f
 
-migrate: ## [api] Run database migrations via Docker
+postgres-up: ## [db] Start only PostgreSQL database
+	docker compose up -d postgres
+
+postgres-down: ## [db] Stop PostgreSQL database
+	docker compose stop postgres
+
+migrate: ## [db] Run database migrations via Docker
 	@echo "Running migrations via Docker..."
 	@docker compose exec -T postgres psql -U link_mgmt_user -d link_mgmt_db < link-mgmt-go/migrations/001_create_users.sql
 	@docker compose exec -T postgres psql -U link_mgmt_user -d link_mgmt_db < link-mgmt-go/migrations/002_create_links.sql

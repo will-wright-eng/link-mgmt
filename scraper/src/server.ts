@@ -1,5 +1,6 @@
 import { BrowserManager } from "./browser";
 import { extractMainContent } from "./extractor";
+import { logger } from "./logger";
 import type { ExtractionResult } from "./types";
 
 let manager: BrowserManager | null = null;
@@ -8,19 +9,20 @@ let initialized = false;
 // Initialize browser on startup
 async function initBrowser() {
   try {
+    logger.info("Initializing browser");
     manager = new BrowserManager();
     await manager.initialize(true); // headless mode
     initialized = true;
-    console.log("Browser initialized");
+    logger.info("Browser initialized successfully");
   } catch (error) {
-    console.error("Failed to initialize browser:", error);
+    logger.error("Failed to initialize browser", error);
     process.exit(1);
   }
 }
 
 // Graceful shutdown
 process.on("SIGTERM", async () => {
-  console.log("SIGTERM received, shutting down gracefully");
+  logger.info("SIGTERM received, shutting down gracefully");
   if (manager) {
     await manager.cleanup();
   }
@@ -28,7 +30,7 @@ process.on("SIGTERM", async () => {
 });
 
 process.on("SIGINT", async () => {
-  console.log("SIGINT received, shutting down gracefully");
+  logger.info("SIGINT received, shutting down gracefully");
   if (manager) {
     await manager.cleanup();
   }
@@ -70,24 +72,33 @@ async function handleHealth(): Promise<Response> {
 async function handleScrape(request: Request): Promise<Response> {
   const body = await parseJSON(request);
   if (!body || typeof body !== "object" || !("url" in body)) {
+    logger.warn("Invalid scrape request: missing URL in body");
     return sendJSON({ error: "URL is required" }, 400);
   }
 
   const { url, timeout = 10000 } = body as { url: string; timeout?: number };
 
   if (!url || typeof url !== "string") {
+    logger.warn("Invalid scrape request: URL is not a string", { url });
     return sendJSON({ error: "URL is required" }, 400);
   }
 
   if (!initialized || !manager) {
+    logger.error("Scrape request received but browser not initialized", undefined, { url });
     return sendJSON({ error: "Browser not initialized" }, 503);
   }
 
+  logger.info("Starting scrape", { url, timeout });
+
   try {
+    const scrapeStartTime = Date.now();
     const html = await manager.extractFromUrl(url, timeout);
+    const extractionStartTime = Date.now();
     const extracted = await extractMainContent(html, url);
+    const extractionDuration = Date.now() - extractionStartTime;
 
     if (!extracted) {
+      logger.warn("Failed to extract content", { url, extractionDuration: `${extractionDuration}ms` });
       return sendJSON(
         {
           success: false,
@@ -97,6 +108,15 @@ async function handleScrape(request: Request): Promise<Response> {
         500
       );
     }
+
+    const totalDuration = Date.now() - scrapeStartTime;
+    logger.info("Scrape completed successfully", {
+      url,
+      title: extracted.title || undefined,
+      contentLength: extracted.text?.length || 0,
+      extractionDuration: `${extractionDuration}ms`,
+      totalDuration: `${totalDuration}ms`,
+    });
 
     return sendJSON(
       {
@@ -109,6 +129,7 @@ async function handleScrape(request: Request): Promise<Response> {
       200
     );
   } catch (error) {
+    logger.error("Scrape failed", error, { url });
     return sendJSON(
       {
         success: false,
@@ -129,6 +150,7 @@ async function handleBatchScrape(request: Request): Promise<Response> {
     !("urls" in body) ||
     !Array.isArray(body.urls)
   ) {
+    logger.warn("Invalid batch scrape request: urls must be an array");
     return sendJSON({ error: "urls must be an array" }, 400);
   }
 
@@ -138,15 +160,23 @@ async function handleBatchScrape(request: Request): Promise<Response> {
   };
 
   if (!initialized || !manager) {
+    logger.error("Batch scrape request received but browser not initialized", undefined, {
+      urlCount: urls.length,
+    });
     return sendJSON({ error: "Browser not initialized" }, 503);
   }
+
+  logger.info("Starting batch scrape", { urlCount: urls.length, timeout });
+  const batchStartTime = Date.now();
 
   const results: ExtractionResult[] = [];
 
   for (const url of urls) {
     try {
+      const urlStartTime = Date.now();
       const html = await manager.extractFromUrl(url, timeout);
       const extracted = await extractMainContent(html, url);
+      const urlDuration = Date.now() - urlStartTime;
 
       results.push({
         url,
@@ -155,7 +185,14 @@ async function handleBatchScrape(request: Request): Promise<Response> {
         extracted_at: new Date().toISOString(),
         error: extracted ? null : "Failed to extract content",
       });
+
+      logger.debug("Batch scrape URL completed", {
+        url,
+        success: !!extracted,
+        duration: `${urlDuration}ms`,
+      });
     } catch (error) {
+      logger.warn("Batch scrape URL failed", { url, error: error instanceof Error ? error.message : String(error) });
       results.push({
         url,
         title: "",
@@ -166,7 +203,59 @@ async function handleBatchScrape(request: Request): Promise<Response> {
     }
   }
 
+  const batchDuration = Date.now() - batchStartTime;
+  const successCount = results.filter((r) => !r.error).length;
+  const errorCount = results.filter((r) => r.error).length;
+
+  logger.info("Batch scrape completed", {
+    urlCount: urls.length,
+    successCount,
+    errorCount,
+    totalDuration: `${batchDuration}ms`,
+  });
+
   return sendJSON({ results }, 200);
+}
+
+// Request logging middleware
+async function logRequest(
+  request: Request,
+  handler: (request: Request) => Promise<Response>
+): Promise<Response> {
+  const startTime = Date.now();
+  const url = new URL(request.url);
+  const method = request.method;
+  const path = url.pathname;
+
+  logger.info("Request received", {
+    method,
+    path,
+    userAgent: request.headers.get("user-agent") || undefined,
+  });
+
+  try {
+    const response = await handler(request);
+    const duration = Date.now() - startTime;
+
+    logger.info("Request completed", {
+      method,
+      path,
+      status: response.status,
+      duration: `${duration}ms`,
+    });
+
+    return response;
+  } catch (error) {
+    const duration = Date.now() - startTime;
+
+    logger.error("Request failed", error, {
+      method,
+      path,
+      duration: `${duration}ms`,
+    });
+
+    throw error;
+  }
 }
 
 // Request router
@@ -201,13 +290,13 @@ async function startServer() {
   const port = parseInt(process.env.PORT || "3000", 10);
   const server = Bun.serve({
     port,
-    fetch: handleRequest,
+    fetch: (request: Request) => logRequest(request, handleRequest),
   });
 
-  console.log(`Scraper service listening on port ${server.port}`);
+  logger.info("Scraper service started", { port: server.port });
 }
 
 startServer().catch((error) => {
-  console.error("Failed to start server:", error);
+  logger.error("Failed to start server", error);
   process.exit(1);
 });

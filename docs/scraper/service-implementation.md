@@ -18,6 +18,7 @@ This document provides a step-by-step implementation plan for adding HTTP servic
 - ✅ Service Dockerfile (`scraper/Dockerfile.service`)
 - ✅ Go HTTP client (`link-mgmt-go/pkg/scraper/client.go`)
 - ✅ TypeScript type issues fixed (type-only imports for Playwright types)
+- ✅ Structured logging and observability (`scraper/src/logger.ts`)
 
 **Remaining**:
 
@@ -31,232 +32,12 @@ This document provides a step-by-step implementation plan for adding HTTP servic
 
 **Action**: Create HTTP server using Bun's native server that exposes scraping via REST API
 
-```typescript
-import { BrowserManager } from "./browser";
-import { extractMainContent } from "./extractor";
-import type { ExtractionResult } from "./types";
-
-let manager: BrowserManager | null = null;
-let initialized = false;
-
-// Initialize browser on startup
-async function initBrowser() {
-  try {
-    manager = new BrowserManager();
-    await manager.initialize(true); // headless mode
-    initialized = true;
-    console.log("Browser initialized");
-  } catch (error) {
-    console.error("Failed to initialize browser:", error);
-    process.exit(1);
-  }
-}
-
-// Graceful shutdown
-process.on("SIGTERM", async () => {
-  console.log("SIGTERM received, shutting down gracefully");
-  if (manager) {
-    await manager.cleanup();
-  }
-  process.exit(0);
-});
-
-process.on("SIGINT", async () => {
-  console.log("SIGINT received, shutting down gracefully");
-  if (manager) {
-    await manager.cleanup();
-  }
-  process.exit(0);
-});
-
-// Helper to send JSON response
-function sendJSON(response: Response, data: unknown, status: number = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
-}
-
-// Helper to parse JSON body
-async function parseJSON(request: Request): Promise<unknown> {
-  try {
-    return await request.json();
-  } catch {
-    return null;
-  }
-}
-
-// Health check
-async function handleHealth(): Promise<Response> {
-  return sendJSON(
-    new Response(),
-    {
-      status: "ok",
-      initialized,
-      timestamp: new Date().toISOString(),
-    },
-    200
-  );
-}
-
-// Scrape single URL
-async function handleScrape(request: Request): Promise<Response> {
-  const body = await parseJSON(request);
-  if (!body || typeof body !== "object" || !("url" in body)) {
-    return sendJSON(new Response(), { error: "URL is required" }, 400);
-  }
-
-  const { url, timeout = 10000 } = body as { url: string; timeout?: number };
-
-  if (!url || typeof url !== "string") {
-    return sendJSON(new Response(), { error: "URL is required" }, 400);
-  }
-
-  if (!initialized || !manager) {
-    return sendJSON(new Response(), { error: "Browser not initialized" }, 503);
-  }
-
-  try {
-    const html = await manager.extractFromUrl(url, timeout);
-    const extracted = await extractMainContent(html, url);
-
-    if (!extracted) {
-      return sendJSON(
-        new Response(),
-        {
-          success: false,
-          url,
-          error: "Failed to extract content",
-        },
-        500
-      );
-    }
-
-    return sendJSON(
-      new Response(),
-      {
-        success: true,
-        url,
-        title: extracted.title || "",
-        text: extracted.text || "",
-        extracted_at: new Date().toISOString(),
-      },
-      200
-    );
-  } catch (error) {
-    return sendJSON(
-      new Response(),
-      {
-        success: false,
-        url,
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
-      500
-    );
-  }
-}
-
-// Batch scrape
-async function handleBatchScrape(request: Request): Promise<Response> {
-  const body = await parseJSON(request);
-  if (
-    !body ||
-    typeof body !== "object" ||
-    !("urls" in body) ||
-    !Array.isArray(body.urls)
-  ) {
-    return sendJSON(new Response(), { error: "urls must be an array" }, 400);
-  }
-
-  const { urls, timeout = 10000 } = body as {
-    urls: string[];
-    timeout?: number;
-  };
-
-  if (!initialized || !manager) {
-    return sendJSON(new Response(), { error: "Browser not initialized" }, 503);
-  }
-
-  const results: ExtractionResult[] = [];
-
-  for (const url of urls) {
-    try {
-      const html = await manager.extractFromUrl(url, timeout);
-      const extracted = await extractMainContent(html, url);
-
-      results.push({
-        url,
-        title: extracted?.title || "",
-        text: extracted?.text || "",
-        extracted_at: new Date().toISOString(),
-        error: extracted ? null : "Failed to extract content",
-      });
-    } catch (error) {
-      results.push({
-        url,
-        title: "",
-        text: "",
-        extracted_at: new Date().toISOString(),
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
-    }
-  }
-
-  return sendJSON(new Response(), { results }, 200);
-}
-
-// Request router
-async function handleRequest(request: Request): Promise<Response> {
-  const url = new URL(request.url);
-  const path = url.pathname;
-  const method = request.method;
-
-  // Health check
-  if (path === "/health" && method === "GET") {
-    return handleHealth();
-  }
-
-  // Single scrape
-  if (path === "/scrape" && method === "POST") {
-    return handleScrape(request);
-  }
-
-  // Batch scrape
-  if (path === "/scrape/batch" && method === "POST") {
-    return handleBatchScrape(request);
-  }
-
-  // 404 for unknown routes
-  return sendJSON(new Response(), { error: "Not found" }, 404);
-}
-
-// Initialize browser and start server
-async function startServer() {
-  await initBrowser();
-
-  const port = parseInt(process.env.PORT || "3000", 10);
-  const server = Bun.serve({
-    port,
-    fetch: handleRequest,
-  });
-
-  console.log(`Scraper service listening on port ${server.port}`);
-}
-
-startServer().catch((error) => {
-  console.error("Failed to start server:", error);
-  process.exit(1);
-});
-```
-
 **Tasks**:
 
 - [x] Create `scraper/src/server.ts`
-- [x] Implement health check endpoint
-- [x] Implement single scrape endpoint
-- [x] Implement batch scrape endpoint
+- [x] Implement health check endpoint (`GET /health`)
+- [x] Implement single scrape endpoint (`POST /scrape`)
+- [x] Implement batch scrape endpoint (`POST /scrape/batch`)
 - [x] Add graceful shutdown handling
 - [ ] Test server locally: `bun run src/server.ts`
 
@@ -311,51 +92,23 @@ The existing dependencies in `package.json` are sufficient:
 
 **File**: `scraper/Dockerfile.service` (new file)
 
-**Action**: Create Dockerfile specifically for service mode
-
-```dockerfile
-FROM mcr.microsoft.com/playwright:v1.56.1-focal
-
-# Install Bun
-RUN curl -fsSL https://bun.sh/install | bash
-ENV PATH="/root/.bun/bin:${PATH}"
-
-# Set working directory
-WORKDIR /app
-
-# Copy dependency files
-COPY package.json bun.lock ./
-
-# Install dependencies
-RUN bun install
-
-# Copy source code
-COPY src ./src
-COPY tsconfig.json ./
-
-# Expose port
-EXPOSE 3000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
-
-# Run server
-CMD ["bun", "run", "src/server.ts"]
-```
+**Action**: Create Dockerfile specifically for service mode with Playwright base image and Bun runtime
 
 **Tasks**:
 
 - [x] Create `scraper/Dockerfile.service`
+- [x] Install system dependencies (curl, unzip) for Bun installation
+- [x] Configure health check
 - [ ] Test build: `docker build -f Dockerfile.service -t link-mgmt-scraper-service:latest .`
 - [ ] Test run: `docker run -p 3000:3000 link-mgmt-scraper-service:latest`
 - [ ] Test health check: `curl http://localhost:3000/health`
 
 **Acceptance Criteria**:
 
-- Service image builds successfully
-- Service starts and listens on port 3000
-- Health check works
+- [x] Dockerfile created ✅
+- [ ] Service image builds successfully (testing pending)
+- [ ] Service starts and listens on port 3000 (testing pending)
+- [ ] Health check works (testing pending)
 
 ---
 
@@ -363,107 +116,7 @@ CMD ["bun", "run", "src/server.ts"]
 
 **File**: `link-mgmt-go/pkg/scraper/client.go` (new file)
 
-**Action**: Create HTTP client for scraper service
-
-```go
-package scraper
-
-import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"time"
-)
-
-type ScraperService struct {
-	baseURL string
-	client  *http.Client
-}
-
-func NewScraperService(baseURL string) *ScraperService {
-	if baseURL == "" {
-		baseURL = "http://localhost:3000"
-	}
-
-	return &ScraperService{
-		baseURL: baseURL,
-		client: &http.Client{
-			Timeout: 60 * time.Second,
-		},
-	}
-}
-
-type ScrapeRequest struct {
-	URL     string `json:"url"`
-	Timeout int    `json:"timeout,omitempty"`
-}
-
-type ScrapeResponse struct {
-	Success     bool   `json:"success"`
-	URL         string `json:"url"`
-	Title       string `json:"title"`
-	Text        string `json:"text"`
-	ExtractedAt string `json:"extracted_at"`
-	Error       string `json:"error,omitempty"`
-}
-
-// CheckHealth verifies the service is available
-func (s *ScraperService) CheckHealth() error {
-	resp, err := s.client.Get(s.baseURL + "/health")
-	if err != nil {
-		return fmt.Errorf("service not available: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("service unhealthy: status %d", resp.StatusCode)
-	}
-
-	return nil
-}
-
-// Scrape scrapes a single URL
-func (s *ScraperService) Scrape(url string, timeout int) (*ScrapeResponse, error) {
-	reqBody := ScrapeRequest{
-		URL:     url,
-		Timeout: timeout,
-	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	resp, err := s.client.Post(
-		s.baseURL+"/scrape",
-		"application/json",
-		bytes.NewBuffer(jsonData),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to call scraper service: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("scraper service error (status %d): %s", resp.StatusCode, string(body))
-	}
-
-	var result ScrapeResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &result, nil
-}
-
-```
+**Action**: Create HTTP client for scraper service with health check and scraping capabilities
 
 **Tasks**:
 
@@ -481,6 +134,73 @@ func (s *ScraperService) Scrape(url string, timeout int) (*ScrapeResponse, error
 - [ ] Can connect to service (testing pending)
 - [ ] Can scrape URLs via HTTP (testing pending)
 - [x] Error handling is robust ✅
+
+---
+
+## Step 6: Add Observability and Logging
+
+**Files**:
+
+- `scraper/src/logger.ts` (new file)
+- `scraper/src/server.ts` (update)
+
+**Action**: Add structured logging and observability to the scraper service for better monitoring and debugging
+
+### Implementation Details
+
+1. **Structured Logger** (`scraper/src/logger.ts`):
+   - JSON-formatted log entries with timestamps
+   - Multiple log levels: `info`, `warn`, `error`, `debug`
+   - Error stack trace capture
+   - Configurable debug logging via `LOG_LEVEL` environment variable
+
+2. **Request Logging Middleware**:
+   - Logs all incoming requests with method, path, and user-agent
+   - Tracks request duration
+   - Logs response status codes
+   - Captures errors with context
+
+3. **Scrape Operation Logging**:
+   - Logs scrape start/completion with URL and timing
+   - Tracks extraction duration separately
+   - Logs content length for successful extractions
+   - Logs errors with context for failed scrapes
+
+4. **Batch Operation Logging**:
+   - Logs batch start with URL count
+   - Per-URL debug logging
+   - Summary logs with success/error counts
+   - Total duration tracking
+
+**Example Log Output**:
+
+```json
+{"timestamp":"2024-01-01T12:00:00.000Z","level":"info","message":"Request received","method":"POST","path":"/scrape"}
+{"timestamp":"2024-01-01T12:00:00.100Z","level":"info","message":"Starting scrape","url":"https://example.com","timeout":10000}
+{"timestamp":"2024-01-01T12:00:02.500Z","level":"info","message":"Scrape completed successfully","url":"https://example.com","title":"Example Domain","contentLength":1250,"totalDuration":"2400ms"}
+{"timestamp":"2024-01-01T12:00:02.501Z","level":"info","message":"Request completed","method":"POST","path":"/scrape","status":200,"duration":"2401ms"}
+```
+
+**Tasks**:
+
+- [x] Create structured logger utility
+- [x] Add request logging middleware
+- [x] Add scrape operation logging
+- [x] Add batch operation logging
+- [x] Replace console.log/console.error with structured logger
+- [x] Test logging in Docker containers
+
+**Acceptance Criteria**:
+
+- [x] All logs are structured JSON ✅
+- [x] Request logging includes timing information ✅
+- [x] Error logging includes stack traces ✅
+- [x] Logs are visible in Docker Compose logs ✅
+- [ ] Log aggregation setup (optional, future enhancement)
+
+**Environment Variables**:
+
+- `LOG_LEVEL=debug` - Enable debug level logging (optional)
 
 ---
 
@@ -553,10 +273,12 @@ func (s *ScraperService) Scrape(url string, timeout int) (*ScrapeResponse, error
 - ✅ Service Dockerfile (`scraper/Dockerfile.service`)
 - ✅ Go HTTP client (`link-mgmt-go/pkg/scraper/client.go`)
 - ✅ TypeScript fixes (type-only imports, added @types/jsdom)
+- ✅ Structured logging and observability (`scraper/src/logger.ts`)
 
 **Files Created**:
 
 - `scraper/src/server.ts` - HTTP service implementation using Bun's native server
+- `scraper/src/logger.ts` - Structured logging utility
 - `scraper/Dockerfile.service` - Docker configuration for service deployment
 - `link-mgmt-go/pkg/scraper/client.go` - Go HTTP client for scraper service
 
@@ -564,6 +286,7 @@ func (s *ScraperService) Scrape(url string, timeout int) (*ScrapeResponse, error
 
 - `scraper/package.json` - Added `@types/jsdom` to devDependencies
 - `scraper/src/browser.ts` - Fixed TypeScript imports (type-only imports for Playwright types)
+- `scraper/src/server.ts` - Added structured logging and request middleware
 
 **Success Metrics**:
 
