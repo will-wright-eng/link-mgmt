@@ -23,8 +23,9 @@ type Config struct {
 
 	// CLI
 	CLI struct {
-		APIBaseURL string `toml:"api_base_url"`
-		APIKey     string `toml:"api_key"`
+		BaseURL       string `toml:"base_url"` // Base URL for all services (via nginx)
+		APIKey        string `toml:"api_key"`
+		ScrapeTimeout int    `toml:"scrape_timeout"` // Timeout for scraping operations in seconds
 	} `toml:"cli"`
 }
 
@@ -35,8 +36,9 @@ func DefaultConfig() *Config {
 	cfg.Database.URL = "postgres://link_mgmt_user:link_mgmt_pwd@localhost:5432/link_mgmt_db?sslmode=disable"
 	cfg.API.Port = 8080
 	cfg.API.Host = "0.0.0.0"
-	cfg.CLI.APIBaseURL = "http://localhost:8080"
+	cfg.CLI.BaseURL = "http://localhost" // nginx reverse proxy on port 80
 	cfg.CLI.APIKey = ""
+	cfg.CLI.ScrapeTimeout = 30 // 30 seconds default
 	return cfg
 }
 
@@ -77,6 +79,15 @@ func Load() (*Config, error) {
 
 		// Create default config file
 		cfg := DefaultConfig()
+
+		// Override with environment variables if set (useful for Docker)
+		if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+			cfg.Database.URL = dbURL
+		}
+		if baseURL := os.Getenv("BASE_URL"); baseURL != "" {
+			cfg.CLI.BaseURL = baseURL
+		}
+
 		if err := Save(cfg); err != nil {
 			return nil, fmt.Errorf("failed to create default config: %w", err)
 		}
@@ -105,8 +116,16 @@ func Load() (*Config, error) {
 	if cfg.API.Host == "" {
 		cfg.API.Host = defaultCfg.API.Host
 	}
-	if cfg.CLI.APIBaseURL == "" {
-		cfg.CLI.APIBaseURL = defaultCfg.CLI.APIBaseURL
+	if cfg.CLI.ScrapeTimeout == 0 {
+		cfg.CLI.ScrapeTimeout = defaultCfg.CLI.ScrapeTimeout
+	}
+	if cfg.CLI.BaseURL == "" {
+		cfg.CLI.BaseURL = defaultCfg.CLI.BaseURL
+	}
+
+	// Override with environment variables if set (useful for Docker)
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		cfg.Database.URL = dbURL
 	}
 
 	return &cfg, nil

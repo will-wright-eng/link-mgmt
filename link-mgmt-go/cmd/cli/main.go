@@ -45,8 +45,8 @@ func main() {
 
 	// Handle registration (needs API URL but not API key)
 	if *register != "" {
-		if cfg.CLI.APIBaseURL == "" {
-			log.Fatalf("API base URL not configured. Set it with: --config-set cli.api_base_url=<url>")
+		if cfg.CLI.BaseURL == "" {
+			log.Fatalf("Base URL not configured. Set it with: --config-set cli.base_url=<url>")
 		}
 		if err := app.RegisterUser(*register); err != nil {
 			log.Fatalf("failed to register user: %v", err)
@@ -57,8 +57,8 @@ func main() {
 	// For operations that need API connection
 	if *listMode || *addMode || *deleteMode {
 		// Validate API configuration
-		if cfg.CLI.APIBaseURL == "" {
-			log.Fatalf("API base URL not configured. Set it with: --config-set cli.api_base_url=<url>")
+		if cfg.CLI.BaseURL == "" {
+			log.Fatalf("Base URL not configured. Set it with: --config-set cli.base_url=<url>")
 		}
 		if cfg.CLI.APIKey == "" {
 			log.Fatalf("API key not configured.\n\nTo get started:\n  1. Register a new account: --register <email>\n  2. Or set API key manually: --config-set cli.api_key=<key>")

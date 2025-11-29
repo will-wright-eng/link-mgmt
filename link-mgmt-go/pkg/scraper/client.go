@@ -43,9 +43,16 @@ type ScrapeResponse struct {
 
 // CheckHealth verifies the service is available
 func (s *ScraperService) CheckHealth() error {
-	resp, err := s.client.Get(s.baseURL + "/health")
+	// Use /scraper/health endpoint (via nginx) or /health as fallback
+	healthURL := s.baseURL + "/scraper/health"
+	resp, err := s.client.Get(healthURL)
 	if err != nil {
-		return fmt.Errorf("service not available: %w", err)
+		// Fallback to /health for backward compatibility
+		healthURL = s.baseURL + "/health"
+		resp, err = s.client.Get(healthURL)
+		if err != nil {
+			return fmt.Errorf("service not available: %w", err)
+		}
 	}
 	defer resp.Body.Close()
 

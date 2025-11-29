@@ -66,11 +66,20 @@ link-mgmt-go/
 
 ### API Server
 
+**Local development:**
+
 ```bash
 go run ./cmd/api
 ```
 
-The API will start on `http://localhost:8080` (configurable in config.toml)
+**Docker with hot reloading:**
+
+```bash
+# From the project root
+docker compose --profile dev up api-dev
+```
+
+The API will start on `http://localhost:8080` (configurable in config.toml). With Docker, changes to Go files will automatically trigger a rebuild and restart.
 
 ### CLI
 
@@ -117,8 +126,9 @@ host = "0.0.0.0"
 port = 8080
 
 [cli]
-api_base_url = "http://localhost:8080"
+base_url = "http://localhost"
 api_key = ""
+scrape_timeout = 30
 ```
 
 **Note:** The default config matches the docker-compose.yml PostgreSQL settings. You can manage the config file using the CLI commands above without requiring a database connection.

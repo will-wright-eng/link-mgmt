@@ -35,24 +35,24 @@ func (a *App) getClient() (*client.Client, error) {
 		return a.client, nil
 	}
 
-	if a.cfg.CLI.APIBaseURL == "" {
-		return nil, fmt.Errorf("API base URL not configured")
+	if a.cfg.CLI.BaseURL == "" {
+		return nil, fmt.Errorf("base URL not configured (set cli.base_url)")
 	}
 	if a.cfg.CLI.APIKey == "" {
 		return nil, fmt.Errorf("API key not configured")
 	}
 
-	a.client = client.NewClient(a.cfg.CLI.APIBaseURL, a.cfg.CLI.APIKey)
+	a.client = client.NewClient(a.cfg.CLI.BaseURL, a.cfg.CLI.APIKey)
 	return a.client, nil
 }
 
 // getClientForRegistration returns an HTTP client without API key (for registration)
 func (a *App) getClientForRegistration() (*client.Client, error) {
-	if a.cfg.CLI.APIBaseURL == "" {
-		return nil, fmt.Errorf("API base URL not configured")
+	if a.cfg.CLI.BaseURL == "" {
+		return nil, fmt.Errorf("base URL not configured (set cli.base_url)")
 	}
 	// Use empty API key for registration endpoint (doesn't require auth)
-	return client.NewClient(a.cfg.CLI.APIBaseURL, ""), nil
+	return client.NewClient(a.cfg.CLI.BaseURL, ""), nil
 }
 
 // ShowConfig displays the current configuration
@@ -106,10 +106,16 @@ func (a *App) SetConfig(setStr string) error {
 		}
 	case "cli":
 		switch key {
-		case "api_base_url":
-			a.cfg.CLI.APIBaseURL = value
+		case "base_url":
+			a.cfg.CLI.BaseURL = value
 		case "api_key":
 			a.cfg.CLI.APIKey = value
+		case "scrape_timeout":
+			var timeout int
+			if _, err := fmt.Sscanf(value, "%d", &timeout); err != nil {
+				return fmt.Errorf("invalid scrape_timeout value: %s", value)
+			}
+			a.cfg.CLI.ScrapeTimeout = timeout
 		default:
 			return fmt.Errorf("unknown cli key: %s", key)
 		}
@@ -240,7 +246,7 @@ To run migrations:
 	}
 
 	// Update the client with the new API key
-	a.client = client.NewClient(a.cfg.CLI.APIBaseURL, user.APIKey)
+	a.client = client.NewClient(a.cfg.CLI.BaseURL, user.APIKey)
 
 	fmt.Println("✓ User registered successfully!")
 	fmt.Printf("  Email: %s\n", user.Email)
