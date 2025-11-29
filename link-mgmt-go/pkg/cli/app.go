@@ -75,7 +75,9 @@ func (a *App) Run() error {
 		return err
 	}
 
-	model := tui.NewAddLinkForm(apiClient, scraperService, a.cfg.CLI.ScrapeTimeout)
+	// In interactive mode, start the root app-shell model which can launch
+	// multiple flows (add basic, add with scraping, delete, etc.).
+	model := tui.NewRootModel(apiClient, scraperService, a.cfg.CLI.ScrapeTimeout)
 	p := tea.NewProgram(model)
 	_, err = p.Run()
 	return err
