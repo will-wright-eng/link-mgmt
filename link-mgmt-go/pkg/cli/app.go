@@ -8,6 +8,7 @@ import (
 	"link-mgmt-go/pkg/cli/client"
 	"link-mgmt-go/pkg/cli/tui"
 	"link-mgmt-go/pkg/config"
+	"link-mgmt-go/pkg/models"
 	"link-mgmt-go/pkg/scraper"
 )
 
@@ -62,6 +63,32 @@ func (a *App) getScraperService() (*scraper.ScraperService, error) {
 	// Use same base URL as API (nginx routes /scrape to scraper service)
 	a.scraperService = scraper.NewScraperService(a.cfg.CLI.BaseURL)
 	return a.scraperService, nil
+}
+
+// SaveLink saves a link to the API
+func (a *App) SaveLink(url string) error {
+	apiClient, err := a.getClient()
+	if err != nil {
+		return fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	linkCreate := models.LinkCreate{
+		URL: url,
+	}
+
+	created, err := apiClient.CreateLink(linkCreate)
+	if err != nil {
+		return fmt.Errorf("failed to save link: %w", err)
+	}
+
+	fmt.Println("✓ Link saved successfully!")
+	fmt.Printf("  URL: %s\n", created.URL)
+	if created.Title != nil && *created.Title != "" {
+		fmt.Printf("  Title: %s\n", *created.Title)
+	}
+	fmt.Printf("  ID: %s\n", created.ID.String())
+
+	return nil
 }
 
 func (a *App) Run() error {

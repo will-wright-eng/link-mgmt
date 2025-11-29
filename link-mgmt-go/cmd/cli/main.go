@@ -17,6 +17,7 @@ func main() {
 	var (
 		register  = flag.String("register", "", "Register a new user account (provide email)")
 		scrapeURL = flag.String("scrape", "", "Scrape a URL to extract title and text content")
+		saveURL   = flag.String("save", "", "Save a link to the API (provide URL)")
 
 		// Config commands
 		configShow = flag.Bool("config-show", false, "Show current configuration")
@@ -127,6 +128,28 @@ func main() {
 			}
 		} else {
 			fmt.Println("Text: (no text content)")
+		}
+		return
+	}
+
+	// Handle save command (needs base URL and API key)
+	if *saveURL != "" {
+		if cfg.CLI.BaseURL == "" {
+			log.Fatalf("Base URL not configured. Set it with: --config-set cli.base_url=<url>")
+		}
+		if cfg.CLI.APIKey == "" {
+			log.Fatalf("API key not configured. Register a user with --register <email> or set it with: --config-set cli.api_key=<key>")
+		}
+
+		// Validate URL format
+		urlStr, err := utils.ValidateURL(*saveURL)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: invalid URL: %v\n", err)
+			os.Exit(1)
+		}
+
+		if err := app.SaveLink(urlStr); err != nil {
+			log.Fatalf("failed to save link: %v", err)
 		}
 		return
 	}

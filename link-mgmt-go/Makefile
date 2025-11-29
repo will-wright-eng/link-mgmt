@@ -28,3 +28,6 @@ test: ## Run tests
 deps: ## Install dependencies
 	go mod download
 	go mod tidy
+
+seed: ## Seed the database with links
+	bash add-links.sh links.txt
