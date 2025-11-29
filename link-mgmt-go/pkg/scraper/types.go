@@ -1,9 +1,10 @@
 package scraper
 
-// ScrapeRequest represents a request to scrape a URL
+// ScrapeRequest represents a request to scrape a URL.
+// NOTE: The Timeout field is expressed in milliseconds to match the scraper service API.
 type ScrapeRequest struct {
 	URL     string `json:"url"`
-	Timeout int    `json:"timeout,omitempty"`
+	Timeout int    `json:"timeout,omitempty"` // milliseconds
 }
 
 // ScrapeResponse represents the response from a scrape operation

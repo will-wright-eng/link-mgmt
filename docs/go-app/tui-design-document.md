@@ -8,7 +8,7 @@ This document outlines the design for an interactive Terminal User Interface (TU
 
 **Timeline**: 2-3 days
 **Complexity**: Medium-High
-**Status**: 🟢 **Ready for Implementation** - Phase 0 refactorings complete
+**Status**: 🟢 **Phase 2 implemented (initial TUI integration complete); ready for UX polish & testing**
 
 **Prerequisites**:
 
@@ -111,10 +111,9 @@ This document outlines the design for an interactive Terminal User Interface (TU
 
 ```
 pkg/cli/
-├── app.go                    # Main App struct (existing)
-├── models/                   # TUI Models (new)
-│   ├── add_link_form.go     # Enhanced add link form with scraping
-│   └── common.go            # Shared TUI utilities
+├── app.go                    # Main CLI app: wiring, config, and Program startup
+├── tui/                      # TUI models and views
+│   └── add_link_form.go      # Enhanced add link form with scraping (implemented)
 └── client/                   # API client (existing)
 ```
 
@@ -177,7 +176,8 @@ pkg/cli/
 
 ### Enhanced Add Link Form
 
-**File**: `pkg/cli/app.go` (modify existing `addLinkForm`)
+**File**: `pkg/cli/tui/add_link_form.go` (new Bubble Tea model)
+**Wiring**: `pkg/cli/app.go` (`App.Run` creates `NewAddLinkForm` with API client, scraper service, and timeout)
 
 #### State Management
 
@@ -713,30 +713,30 @@ The high-priority refactorings (Context Support, Structured Error Types, Progres
 - [x] Basic field inputs (URL, Title, Description, Text)
 - [x] Form submission to API
 
-### Phase 2: Scraping Integration ⏳ TODO
+### Phase 2: Scraping Integration ✅ IMPLEMENTED (Initial Version)
 
 **Prerequisites**: Phase 0 refactorings (#1, #2, #3 minimum)
 
-- [ ] Add scraper service to form
-- [ ] Implement scraping command with context support
-- [ ] Handle scraping results with structured errors
-- [ ] Auto-fill fields with scraped content
-- [ ] Integrate progress callbacks for loading states
-- [ ] Handle cancellation (user presses Esc during scraping)
+- [x] Add scraper service to form (`App.getScraperService`, passed into `NewAddLinkForm`)
+- [x] Implement scraping command with context support (`startScraping` + `runScrapeCommand` with `context.WithTimeout`)
+- [x] Handle scraping results with structured errors (`errors.As` with `*scraper.ScraperError`, mapped to `UserMessage()` in the TUI)
+- [x] Auto-fill fields with scraped content (title and text pre-filled when available)
+- [ ] Integrate progress callbacks for loading states (callbacks are wired, but progress messages are not yet surfaced into the Bubble Tea event loop)
+- [x] Handle cancellation (user presses Esc during scraping; context is cancelled)
 
-### Phase 3: Enhanced UX ⏳ TODO
+### Phase 3: Enhanced UX ⏳ PARTIALLY COMPLETE
 
-- [ ] Multi-field navigation (Tab)
-- [ ] Visual focus indicators
-- [ ] Scraped content indicators
-- [ ] Loading states with progress updates
-- [ ] Error messages using structured error types
+- [x] Multi-field navigation (Tab / Shift+Tab in review step)
+- [x] Visual focus indicators (active field rendered in bold using `lipgloss`)
+- [x] Scraped content indicators (`(scraped)` label next to auto-filled title)
+- [x] Loading states with basic progress text (`renderScraping`, stage label, message)
+- [x] Error messages using structured error types (map `ScraperError.UserMessage()` into UI via `userFacingError`)
 - [ ] Show scraping duration in success message
 
-### Phase 4: Polish ⏳ TODO
+### Phase 4: Polish ⏳ PARTIALLY COMPLETE
 
-- [ ] Keyboard shortcuts
-- [ ] Skip scraping option
+- [x] Keyboard shortcuts (Enter, Tab, Shift+Tab, Esc, `s`, Ctrl+C)
+- [x] Skip scraping option (`s` from URL input to go directly to review/manual entry)
 - [ ] Better error handling with retry suggestions
 - [ ] Success animations
 - [ ] Help text
@@ -748,29 +748,29 @@ The high-priority refactorings (Context Support, Structured Error Types, Progres
 
 ### Functional Requirements
 
-- [ ] User can enter URL and trigger scraping
-- [ ] Scraped content auto-fills title and text fields
-- [ ] User can edit scraped content before saving
-- [ ] User can skip scraping and enter manually
-- [ ] Form handles scraping errors gracefully
-- [ ] User can navigate between fields with Tab
-- [ ] Link saves successfully to API
+- [x] User can enter URL and trigger scraping
+- [x] Scraped content auto-fills title and text fields (when available)
+- [x] User can edit scraped content before saving
+- [x] User can skip scraping and enter manually
+- [x] Form handles scraping errors gracefully (falls back to manual entry; shows inline error)
+- [x] User can navigate between fields with Tab / Shift+Tab
+- [x] Link saves successfully to API
 
 ### Non-Functional Requirements
 
-- [ ] Scraping doesn't block UI indefinitely
-- [ ] Error messages are clear and actionable
-- [ ] Visual feedback is clear and consistent
-- [ ] Keyboard navigation is intuitive
-- [ ] Form works even if scraping fails
+- [x] Scraping doesn't block UI indefinitely (context timeout + cancellable; scraper timeout passed in milliseconds)
+- [x] Error messages are clear and actionable (structured `ScraperError` mapped to user-facing messages)
+- [x] Visual feedback is clear and consistent (distinct views for URL, scraping, review, success)
+- [x] Keyboard navigation is intuitive
+- [x] Form works even if scraping fails
 
 ### User Experience
 
-- [ ] Flow feels natural and intuitive
-- [ ] Loading states are clear
-- [ ] Errors don't block user progress
-- [ ] Scraped content is clearly indicated
-- [ ] Field navigation is smooth
+- [x] Flow feels natural and intuitive (Add → Scrape → Review/Edit → Save)
+- [x] Loading states are clear (dedicated scraping view)
+- [x] Errors don't block user progress
+- [x] Scraped content is clearly indicated
+- [x] Field navigation is smooth
 
 ---
 
@@ -802,8 +802,10 @@ The high-priority refactorings (Context Support, Structured Error Types, Progres
 
 ---
 
-**Last Updated**: Phase 0 refactorings complete - Ready for TUI implementation
+**Last Updated**: 2025-11-29 – Phase 2 scraping integration implemented; Phase 3/4 UX polish in progress
 **Next Steps**:
 
 1. ✅ Phase 0: Scraper client refactorings complete (context support, error types, progress callbacks)
-2. Phase 2: Implement scraping integration in TUI using refactored client
+2. ✅ Phase 2: Implement scraping integration in TUI using refactored client (initial version complete)
+3. Phase 3: Wire structured `ScraperError` messages and progress callbacks into the UI; add duration to success view
+4. Phase 4: Polish UX (help text, retry suggestions, animations) and complete testing per the Testing Strategy

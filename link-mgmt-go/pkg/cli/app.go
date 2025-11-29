@@ -3,7 +3,10 @@ package cli
 import (
 	"fmt"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"link-mgmt-go/pkg/cli/client"
+	"link-mgmt-go/pkg/cli/tui"
 	"link-mgmt-go/pkg/config"
 	"link-mgmt-go/pkg/scraper"
 )
@@ -62,7 +65,18 @@ func (a *App) getScraperService() (*scraper.ScraperService, error) {
 }
 
 func (a *App) Run() error {
-	fmt.Println("Interactive TUI mode - coming soon!")
-	fmt.Println("Use --list, --add, or --delete for now")
-	return nil
+	apiClient, err := a.getClient()
+	if err != nil {
+		return err
+	}
+
+	scraperService, err := a.getScraperService()
+	if err != nil {
+		return err
+	}
+
+	model := tui.NewAddLinkForm(apiClient, scraperService, a.cfg.CLI.ScrapeTimeout)
+	p := tea.NewProgram(model)
+	_, err = p.Run()
+	return err
 }

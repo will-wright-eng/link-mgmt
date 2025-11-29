@@ -107,9 +107,17 @@ func (s *ScraperService) ScrapeWithProgress(ctx context.Context, url string, tim
 		onProgress(StageFetching, "Sending scrape request...")
 	}
 
+	// The scraper service expects timeout in milliseconds, whereas our public
+	// API and configuration use seconds. Convert here to keep the external
+	// interface intuitive while matching the service contract.
+	timeoutMillis := 0
+	if timeout > 0 {
+		timeoutMillis = timeout * 1000
+	}
+
 	reqBody := ScrapeRequest{
 		URL:     url,
-		Timeout: timeout,
+		Timeout: timeoutMillis,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
