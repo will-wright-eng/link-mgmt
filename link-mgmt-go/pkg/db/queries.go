@@ -174,7 +174,6 @@ func (db *DB) UpdateLink(ctx context.Context, linkID, userID uuid.UUID, update m
 	if update.Text != nil {
 		query += fmt.Sprintf(", text = $%d", argPos)
 		args = append(args, *update.Text)
-		argPos++
 	}
 
 	query += ` WHERE id = $1 AND user_id = $2
