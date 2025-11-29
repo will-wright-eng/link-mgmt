@@ -17,3 +17,18 @@ repos:
       - --fix
       verbose: true
       entry: bash -c 'markdownlint "$@" || true' --
+
+  - repo: local
+    hooks:
+      - id: eslint-typescript
+        name: ESLint TypeScript
+        entry: bash -c 'cd scraper && bun lint'
+        language: system
+        files: ^scraper/.*\.ts$
+        pass_filenames: false
+      - id: golangci-lint
+        name: golangci-lint
+        entry: bash -c 'cd link-mgmt-go && golangci-lint run --timeout=5m ./...'
+        language: system
+        files: ^link-mgmt-go/.*\.go$
+        pass_filenames: false
