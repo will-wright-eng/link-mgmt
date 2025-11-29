@@ -2,11 +2,11 @@ package forms
 
 import (
 	"fmt"
-	"net/url"
 	"strings"
 
 	"link-mgmt-go/pkg/cli/client"
 	"link-mgmt-go/pkg/models"
+	"link-mgmt-go/pkg/utils"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -73,13 +73,9 @@ func (m *addLinkForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch m.step {
 			case 0:
 				// Validate URL
-				urlStr := strings.TrimSpace(m.urlInput.Value())
-				if urlStr == "" {
-					m.err = fmt.Errorf("URL is required")
-					return m, nil
-				}
-				if _, err := url.Parse(urlStr); err != nil {
-					m.err = fmt.Errorf("invalid URL: %v", err)
+				_, err := utils.ValidateURL(m.urlInput.Value())
+				if err != nil {
+					m.err = err
 					return m, nil
 				}
 				m.err = nil
@@ -196,14 +192,16 @@ func (m *addLinkForm) View() string {
 
 func (m *addLinkForm) submit() tea.Cmd {
 	return func() tea.Msg {
-		urlStr := strings.TrimSpace(m.urlInput.Value())
+		urlStr, err := utils.ValidateURL(m.urlInput.Value())
+		if err != nil {
+			return submitErrorMsg{err: err}
+		}
+
 		titleStr := strings.TrimSpace(m.titleInput.Value())
 		descStr := strings.TrimSpace(m.descInput.Value())
 		textStr := strings.TrimSpace(m.textInput.Value())
 
-		linkCreate := models.LinkCreate{
-			URL: urlStr,
-		}
+		linkCreate := models.LinkCreate{URL: urlStr}
 
 		if titleStr != "" {
 			linkCreate.Title = &titleStr

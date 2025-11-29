@@ -2,19 +2,18 @@ package cli
 
 import (
 	"fmt"
-	"net/url"
 	"strings"
+
+	"link-mgmt-go/pkg/utils"
 )
 
 // HandleScrapeCommand handles the --scrape command to extract content from a URL
 func (a *App) HandleScrapeCommand(urlStr string) error {
 	// Validate URL format
-	urlStr = strings.TrimSpace(urlStr)
-	if urlStr == "" {
-		return fmt.Errorf("URL is required")
-	}
-	if _, err := url.Parse(urlStr); err != nil {
-		return fmt.Errorf("invalid URL: %w", err)
+	var err error
+	urlStr, err = utils.ValidateURL(urlStr)
+	if err != nil {
+		return err
 	}
 
 	// Get scraper service
