@@ -32,3 +32,15 @@ repos:
         language: system
         files: ^link-mgmt-go/.*\.go$
         pass_filenames: false
+      - id: prettier-typescript
+        name: Prettier TypeScript
+        entry: bash -c 'cd scraper && bun fmt'
+        language: system
+        files: ^scraper/.*\.ts$
+        pass_filenames: false
+      - id: go-fmt
+        name: Go Format
+        entry: bash -c 'cd link-mgmt-go && go fmt ./...'
+        language: system
+        files: ^link-mgmt-go/.*\.go$
+        pass_filenames: false
