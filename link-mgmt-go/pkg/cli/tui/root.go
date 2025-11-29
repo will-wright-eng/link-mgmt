@@ -58,14 +58,6 @@ func (m *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "1":
-			// Basic add link flow (no scraping).
-			m.current = NewBasicAddLinkForm(m.client)
-			if initer, ok := m.current.(interface{ Init() tea.Cmd }); ok {
-				return m, initer.Init()
-			}
-			return m, nil
-
-		case "2":
 			// Enhanced add link flow with scraping from pkg/cli/tui.
 			m.current = NewAddLinkForm(m.client, m.scraperService, m.scrapeTimeout)
 			if initer, ok := m.current.(interface{ Init() tea.Cmd }); ok {
@@ -73,15 +65,7 @@ func (m *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 
-		case "3":
-			// Delete link flow.
-			m.current = NewDeleteLinkForm(m.client)
-			if initer, ok := m.current.(interface{ Init() tea.Cmd }); ok {
-				return m, initer.Init()
-			}
-			return m, nil
-
-		case "4":
+		case "2":
 			// Combined manage links flow (list, view, delete, scrape).
 			m.current = NewManageLinksModel(m.client, m.scraperService, m.scrapeTimeout)
 			if initer, ok := m.current.(interface{ Init() tea.Cmd }); ok {
@@ -106,10 +90,8 @@ func (m *rootModel) View() string {
 	b.WriteString(renderDivider(60))
 	b.WriteString("\n\n")
 	b.WriteString(boldStyle.Render("Select an action:") + "\n\n")
-	b.WriteString("  " + selectedMarkerStyle.Render("1)") + " Add link (basic)\n")
-	b.WriteString("  " + selectedMarkerStyle.Render("2)") + " Add link (with scraping)\n")
-	b.WriteString("  " + selectedMarkerStyle.Render("3)") + " Delete link\n")
-	b.WriteString("  " + selectedMarkerStyle.Render("4)") + " Manage links (list, view, delete, scrape)\n")
+	b.WriteString("  " + selectedMarkerStyle.Render("1)") + " Add link (with scraping)\n")
+	b.WriteString("  " + selectedMarkerStyle.Render("2)") + " Manage links (list, view, delete, scrape)\n")
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("Press the number of an option, or 'q' / Esc to quit.") + "\n")
 
