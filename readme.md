@@ -10,7 +10,7 @@ graph TB
         CLI[CLI Application<br/>Go CLI]
     end
 
-    subgraph "Docker Network (dev profile)"
+    subgraph "Docker Network"
         subgraph "Reverse Proxy"
             Nginx[Nginx<br/>Port 80]
         end
@@ -38,12 +38,12 @@ graph TB
     API -->|SQL| Postgres
     Scraper -.->|Extract Content| External[External URLs]
 
-    style CLI fill:#e1f5ff
-    style Nginx fill:#fff4e6
-    style API fill:#e8f5e9
-    style Scraper fill:#f3e5f5
-    style Postgres fill:#e3f2fd
-    style External fill:#ffebee
+    style CLI fill:#4A90E2,stroke:#2E5C8A,stroke-width:2px,color:#fff
+    style Nginx fill:#FF9800,stroke:#E65100,stroke-width:2px,color:#fff
+    style API fill:#4CAF50,stroke:#2E7D32,stroke-width:2px,color:#fff
+    style Scraper fill:#9C27B0,stroke:#6A1B9A,stroke-width:2px,color:#fff
+    style Postgres fill:#336791,stroke:#1A3A52,stroke-width:2px,color:#fff
+    style External fill:#E91E63,stroke:#AD1457,stroke-width:2px,color:#fff
 ```
 
 ## Components
