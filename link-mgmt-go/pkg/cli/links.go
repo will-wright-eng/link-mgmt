@@ -5,7 +5,7 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"link-mgmt-go/pkg/cli/forms"
+	"link-mgmt-go/pkg/cli/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -70,8 +70,8 @@ func (a *App) AddLink() {
 		os.Exit(1)
 	}
 
-	// Create and run the add link form
-	form := forms.NewAddLinkForm(apiClient)
+	// Create and run the basic add link TUI form
+	form := tui.NewBasicAddLinkForm(apiClient)
 	p := tea.NewProgram(form)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running form: %v\n", err)
@@ -87,11 +87,28 @@ func (a *App) DeleteLink() {
 		os.Exit(1)
 	}
 
-	// Create and run the delete link selector
-	selector := forms.NewDeleteLinkSelector(apiClient)
+	// Create and run the delete link TUI form
+	selector := tui.NewDeleteLinkForm(apiClient)
 	p := tea.NewProgram(selector)
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running selector: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// ViewLinkDetails prompts the user to select a link and view all its fields
+func (a *App) ViewLinkDetails() {
+	apiClient, err := a.getClient()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Create and run the view link details TUI form
+	viewer := tui.NewViewLinkDetailsModel(apiClient)
+	p := tea.NewProgram(viewer)
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error running viewer: %v\n", err)
 		os.Exit(1)
 	}
 }

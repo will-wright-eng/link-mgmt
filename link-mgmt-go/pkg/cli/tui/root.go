@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"link-mgmt-go/pkg/cli/client"
-	"link-mgmt-go/pkg/cli/forms"
 	"link-mgmt-go/pkg/scraper"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -59,8 +58,8 @@ func (m *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "1":
-			// Basic add link flow (no scraping) from pkg/cli/forms.
-			m.current = forms.NewAddLinkForm(m.client)
+			// Basic add link flow (no scraping).
+			m.current = NewBasicAddLinkForm(m.client)
 			if initer, ok := m.current.(interface{ Init() tea.Cmd }); ok {
 				return m, initer.Init()
 			}
@@ -75,8 +74,32 @@ func (m *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "3":
-			// Delete link flow from pkg/cli/forms.
-			m.current = forms.NewDeleteLinkSelector(m.client)
+			// Delete link flow.
+			m.current = NewDeleteLinkForm(m.client)
+			if initer, ok := m.current.(interface{ Init() tea.Cmd }); ok {
+				return m, initer.Init()
+			}
+			return m, nil
+
+		case "4":
+			// List links flow (read-only listing in TUI).
+			m.current = NewListLinksModel(m.client)
+			if initer, ok := m.current.(interface{ Init() tea.Cmd }); ok {
+				return m, initer.Init()
+			}
+			return m, nil
+
+		case "5":
+			// Scrape & enrich an existing link.
+			m.current = NewScrapeExistingLinkForm(m.client, m.scraperService, m.scrapeTimeout)
+			if initer, ok := m.current.(interface{ Init() tea.Cmd }); ok {
+				return m, initer.Init()
+			}
+			return m, nil
+
+		case "6":
+			// View link details (list and show all fields).
+			m.current = NewViewLinkDetailsModel(m.client)
 			if initer, ok := m.current.(interface{ Init() tea.Cmd }); ok {
 				return m, initer.Init()
 			}
@@ -102,6 +125,9 @@ func (m *rootModel) View() string {
 	b.WriteString("  1) Add link (basic)\n")
 	b.WriteString("  2) Add link (with scraping)\n")
 	b.WriteString("  3) Delete link\n")
+	b.WriteString("  4) List links\n")
+	b.WriteString("  5) Scrape & enrich existing link\n")
+	b.WriteString("  6) View link details\n")
 	b.WriteString("\n")
 	b.WriteString("Press the number of an option, or 'q' / Esc to quit.\n")
 

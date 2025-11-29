@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
+
+	"link-mgmt-go/pkg/cli/tui"
 	"link-mgmt-go/pkg/utils"
 )
 
@@ -84,4 +87,23 @@ func truncateText(text string, maxLen int) string {
 		return text
 	}
 	return text[:maxLen] + "..."
+}
+
+// ScrapeExistingLinkFlow starts a TUI flow that lets the user select an existing
+// link and enrich it with scraped content (title/text) from the scraper service.
+func (a *App) ScrapeExistingLinkFlow() error {
+	apiClient, err := a.getClient()
+	if err != nil {
+		return err
+	}
+
+	scraperService, err := a.getScraperService()
+	if err != nil {
+		return err
+	}
+
+	model := tui.NewScrapeExistingLinkForm(apiClient, scraperService, a.cfg.CLI.ScrapeTimeout)
+	p := tea.NewProgram(model)
+	_, err = p.Run()
+	return err
 }

@@ -1,4 +1,4 @@
-package forms
+package tui
 
 import (
 	"fmt"
@@ -12,8 +12,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// deleteLinkSelector is a Bubble Tea model for selecting a link to delete
-type deleteLinkSelector struct {
+// deleteLinkForm is a Bubble Tea model for selecting a link to delete, migrated from the old forms package.
+type deleteLinkForm struct {
 	client   *client.Client
 	links    []models.Link
 	selected int
@@ -22,28 +22,43 @@ type deleteLinkSelector struct {
 	confirm  textinput.Model
 }
 
-// NewDeleteLinkSelector creates a new delete link selector
-func NewDeleteLinkSelector(client *client.Client) *deleteLinkSelector {
+// NewDeleteLinkForm creates a new delete link form.
+func NewDeleteLinkForm(c *client.Client) tea.Model {
 	confirm := textinput.New()
 	confirm.Placeholder = "y/N"
 	confirm.CharLimit = 1
 	confirm.Width = 10
 
-	return &deleteLinkSelector{
-		client:  client,
+	return &deleteLinkForm{
+		client:  c,
 		links:   []models.Link{},
 		step:    0,
 		confirm: confirm,
 	}
 }
 
-func (m *deleteLinkSelector) Init() tea.Cmd {
-	return m.loadLinks
+// deleteLinksLoadedMsg is emitted when links are fetched for deletion.
+type deleteLinksLoadedMsg struct {
+	links []models.Link
+	err   error
 }
 
-func (m *deleteLinkSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+type deleteErrorMsg struct {
+	err error
+}
+
+type deleteSuccessMsg struct{}
+
+func (m *deleteLinkForm) Init() tea.Cmd {
+	return func() tea.Msg {
+		links, err := m.client.ListLinks()
+		return deleteLinksLoadedMsg{links: links, err: err}
+	}
+}
+
+func (m *deleteLinkForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case linksLoadedMsg:
+	case deleteLinksLoadedMsg:
 		if msg.err != nil {
 			m.err = msg.err
 			return m, tea.Quit
@@ -120,7 +135,7 @@ func (m *deleteLinkSelector) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *deleteLinkSelector) View() string {
+func (m *deleteLinkForm) View() string {
 	if m.err != nil {
 		return fmt.Sprintf("\n❌ Error: %v\n\nPress any key to exit...", m.err)
 	}
@@ -182,15 +197,7 @@ func (m *deleteLinkSelector) View() string {
 	return ""
 }
 
-func (m *deleteLinkSelector) loadLinks() tea.Msg {
-	links, err := m.client.ListLinks()
-	if err != nil {
-		return linksLoadedMsg{err: err}
-	}
-	return linksLoadedMsg{links: links}
-}
-
-func (m *deleteLinkSelector) deleteLink() tea.Cmd {
+func (m *deleteLinkForm) deleteLink() tea.Cmd {
 	return func() tea.Msg {
 		if m.selected >= len(m.links) {
 			return deleteErrorMsg{err: fmt.Errorf("invalid selection")}

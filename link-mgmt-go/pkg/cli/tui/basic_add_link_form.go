@@ -1,4 +1,4 @@
-package forms
+package tui
 
 import (
 	"fmt"
@@ -13,8 +13,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// addLinkForm is a Bubble Tea model for the add link form
-type addLinkForm struct {
+// basicAddLinkForm is a simpler add-link flow without scraping, migrated from the old forms package.
+type basicAddLinkForm struct {
 	client     *client.Client
 	urlInput   textinput.Model
 	titleInput textinput.Model
@@ -25,8 +25,8 @@ type addLinkForm struct {
 	created    *models.Link
 }
 
-// NewAddLinkForm creates a new add link form
-func NewAddLinkForm(client *client.Client) *addLinkForm {
+// NewBasicAddLinkForm creates a new basic add link form.
+func NewBasicAddLinkForm(c *client.Client) tea.Model {
 	urlInput := textinput.New()
 	urlInput.Placeholder = "https://example.com"
 	urlInput.Focus()
@@ -49,8 +49,8 @@ func NewAddLinkForm(client *client.Client) *addLinkForm {
 	textInput.SetHeight(5)
 	textInput.CharLimit = 10000
 
-	return &addLinkForm{
-		client:     client,
+	return &basicAddLinkForm{
+		client:     c,
 		urlInput:   urlInput,
 		titleInput: titleInput,
 		descInput:  descInput,
@@ -59,11 +59,11 @@ func NewAddLinkForm(client *client.Client) *addLinkForm {
 	}
 }
 
-func (m *addLinkForm) Init() tea.Cmd {
+func (m *basicAddLinkForm) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-func (m *addLinkForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *basicAddLinkForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -98,10 +98,10 @@ func (m *addLinkForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case submitErrorMsg:
+	case basicSubmitErrorMsg:
 		m.err = msg.err
 		return m, nil
-	case submitSuccessMsg:
+	case basicSubmitSuccessMsg:
 		m.created = msg.link
 		m.step = 4
 		return m, nil
@@ -121,7 +121,7 @@ func (m *addLinkForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *addLinkForm) View() string {
+func (m *basicAddLinkForm) View() string {
 	switch m.step {
 	case 4:
 		// Success view
@@ -190,11 +190,19 @@ func (m *addLinkForm) View() string {
 	}
 }
 
-func (m *addLinkForm) submit() tea.Cmd {
+type basicSubmitErrorMsg struct {
+	err error
+}
+
+type basicSubmitSuccessMsg struct {
+	link *models.Link
+}
+
+func (m *basicAddLinkForm) submit() tea.Cmd {
 	return func() tea.Msg {
 		urlStr, err := utils.ValidateURL(m.urlInput.Value())
 		if err != nil {
-			return submitErrorMsg{err: err}
+			return basicSubmitErrorMsg{err: err}
 		}
 
 		titleStr := strings.TrimSpace(m.titleInput.Value())
@@ -215,9 +223,9 @@ func (m *addLinkForm) submit() tea.Cmd {
 
 		created, err := m.client.CreateLink(linkCreate)
 		if err != nil {
-			return submitErrorMsg{err: err}
+			return basicSubmitErrorMsg{err: err}
 		}
 
-		return submitSuccessMsg{link: created}
+		return basicSubmitSuccessMsg{link: created}
 	}
 }
