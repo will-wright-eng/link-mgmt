@@ -13,8 +13,8 @@ import (
 func main() {
 	var (
 		listMode   = flag.Bool("list", false, "List all links")
-		addMode    = flag.Bool("add", false, "Add a new link")
-		deleteMode = flag.Bool("delete", false, "Delete a link")
+		addURL     = flag.String("add", "", "Add a new link (provide URL)")
+		deleteMode = flag.Bool("delete", false, "Delete a link [interactive mode]")
 		register   = flag.String("register", "", "Register a new user account (provide email)")
 		scrapeURL  = flag.String("scrape", "", "Scrape a URL to extract title and text content")
 
@@ -68,7 +68,7 @@ func main() {
 	}
 
 	// For operations that need API connection
-	if *listMode || *addMode || *deleteMode {
+	if *listMode || *addURL != "" || *deleteMode {
 		// Validate API configuration
 		if cfg.CLI.BaseURL == "" {
 			log.Fatalf("Base URL not configured. Set it with: --config-set cli.base_url=<url>")
@@ -79,8 +79,11 @@ func main() {
 
 		if *listMode {
 			app.ListLinks()
-		} else if *addMode {
-			app.AddLink()
+		} else if *addURL != "" {
+			if err := app.AddLink(*addURL); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
 		} else if *deleteMode {
 			app.DeleteLink()
 		}

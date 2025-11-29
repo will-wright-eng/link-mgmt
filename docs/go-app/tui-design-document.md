@@ -8,7 +8,7 @@ This document outlines the design for an interactive Terminal User Interface (TU
 
 **Timeline**: 2-3 days
 **Complexity**: Medium-High
-**Status**: 🟢 **Phase 2 implemented (initial TUI integration complete); ready for UX polish & testing**
+**Status**: 🟢 **Phase 2 & 3 complete (scraping integration with progress callbacks and duration tracking); Phase 4 UX polish remaining**
 
 **Prerequisites**:
 
@@ -200,6 +200,9 @@ type addLinkForm struct {
     scrapeError     error
     skipScraping    bool  // user chose to skip scraping
     currentField    int   // 0=URL, 1=Title, 2=Description, 3=Text
+    scrapeStartTime time.Time  // tracks when scraping started
+    scrapeDuration  time.Duration  // tracks scraping duration
+    progressChan    chan scrapeProgressMsg  // channel for progress updates
 }
 ```
 
@@ -230,7 +233,7 @@ The scraping command should use `ScrapeWithProgress()` with a progress callback 
 
 **3. Scraping Result Handler**
 
-The handler should process `scrapeSuccessMsg`, `scrapeErrorMsg`, and `scrapeProgressMsg` messages. For errors, use `errors.As()` to check for `*scraper.ScraperError` and access structured error information. Progress messages should update the form's progress state for display.
+The handler processes `scrapeSuccessMsg`, `scrapeErrorMsg`, and `scrapeProgressMsg` messages. For errors, use `errors.As()` to check for `*scraper.ScraperError` and access structured error information. Progress messages update the form's progress state (`scrapeProgress`, `scrapeProgressMsg`) for display. On success, the scraping duration is calculated (`time.Since(scrapeStartTime)`) and stored for display in the success message.
 
 **4. Review Step (Multi-Field Navigation)**
 
@@ -391,6 +394,9 @@ The form needs additional fields to track scraping state:
 - `scrapeErrorType` - Error type if scraping failed (`scraper.ErrorType`)
 - `scrapeCtx` - Context for cancellation
 - `scrapeCancel` - Cancel function for the context
+- `scrapeStartTime` - Timestamp when scraping started (for duration calculation)
+- `scrapeDuration` - Calculated duration of scraping operation
+- `progressChan` - Channel for receiving progress updates from the scraper callback
 
 ---
 
@@ -713,7 +719,7 @@ The high-priority refactorings (Context Support, Structured Error Types, Progres
 - [x] Basic field inputs (URL, Title, Description, Text)
 - [x] Form submission to API
 
-### Phase 2: Scraping Integration ✅ IMPLEMENTED (Initial Version)
+### Phase 2: Scraping Integration ✅ COMPLETE
 
 **Prerequisites**: Phase 0 refactorings (#1, #2, #3 minimum)
 
@@ -721,17 +727,17 @@ The high-priority refactorings (Context Support, Structured Error Types, Progres
 - [x] Implement scraping command with context support (`startScraping` + `runScrapeCommand` with `context.WithTimeout`)
 - [x] Handle scraping results with structured errors (`errors.As` with `*scraper.ScraperError`, mapped to `UserMessage()` in the TUI)
 - [x] Auto-fill fields with scraped content (title and text pre-filled when available)
-- [ ] Integrate progress callbacks for loading states (callbacks are wired, but progress messages are not yet surfaced into the Bubble Tea event loop)
+- [x] Integrate progress callbacks for loading states (progress messages surfaced into Bubble Tea event loop via channel-based `watchProgress()` command)
 - [x] Handle cancellation (user presses Esc during scraping; context is cancelled)
 
-### Phase 3: Enhanced UX ⏳ PARTIALLY COMPLETE
+### Phase 3: Enhanced UX ✅ COMPLETE
 
 - [x] Multi-field navigation (Tab / Shift+Tab in review step)
 - [x] Visual focus indicators (active field rendered in bold using `lipgloss`)
 - [x] Scraped content indicators (`(scraped)` label next to auto-filled title)
 - [x] Loading states with basic progress text (`renderScraping`, stage label, message)
 - [x] Error messages using structured error types (map `ScraperError.UserMessage()` into UI via `userFacingError`)
-- [ ] Show scraping duration in success message
+- [x] Show scraping duration in success message (displays `Scraped in: Xms` when scraping was performed)
 
 ### Phase 4: Polish ⏳ PARTIALLY COMPLETE
 
@@ -802,10 +808,10 @@ The high-priority refactorings (Context Support, Structured Error Types, Progres
 
 ---
 
-**Last Updated**: 2025-11-29 – Phase 2 scraping integration implemented; Phase 3/4 UX polish in progress
+**Last Updated**: 2025-01-XX – Phase 2 and Phase 3 complete; Phase 4 UX polish remaining
 **Next Steps**:
 
 1. ✅ Phase 0: Scraper client refactorings complete (context support, error types, progress callbacks)
-2. ✅ Phase 2: Implement scraping integration in TUI using refactored client (initial version complete)
-3. Phase 3: Wire structured `ScraperError` messages and progress callbacks into the UI; add duration to success view
+2. ✅ Phase 2: Implement scraping integration in TUI using refactored client (complete - progress callbacks wired)
+3. ✅ Phase 3: Wire structured `ScraperError` messages and progress callbacks into the UI; add duration to success view (complete)
 4. Phase 4: Polish UX (help text, retry suggestions, animations) and complete testing per the Testing Strategy

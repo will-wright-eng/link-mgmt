@@ -45,6 +45,9 @@ type addLinkForm struct {
 	scrapeProgressMsg string
 	scrapeCtx         context.Context
 	scrapeCancel      context.CancelFunc
+	scrapeStartTime   time.Time
+	scrapeDuration    time.Duration
+	progressChan      chan scrapeProgressMsg
 
 	// Config
 	scrapeTimeoutSeconds int
@@ -153,12 +156,30 @@ func (m *addLinkForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case scrapeProgressMsg:
 		m.scrapeProgress = msg.stage
 		m.scrapeProgressMsg = msg.message
+		// Continue watching progress if still scraping
+		if m.scraping {
+			return m, m.watchProgress()
+		}
+		return m, nil
+
+	case progressTickMsg:
+		// Continue watching for progress if still scraping
+		if m.scraping && !msg.done {
+			// Schedule another check soon
+			return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
+				// Call watchProgress command and return its message
+				cmd := m.watchProgress()
+				return cmd()
+			})
+		}
+		// If done or not scraping, stop watching
 		return m, nil
 
 	case scrapeSuccessMsg:
 		m.scraping = false
 		m.scrapeResult = msg.result
 		m.scrapeError = nil
+		m.scrapeDuration = time.Since(m.scrapeStartTime)
 
 		// Pre-fill fields from scraped content if available.
 		if msg.result != nil {
@@ -178,6 +199,7 @@ func (m *addLinkForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case scrapeErrorMsg:
 		m.scraping = false
 		m.scrapeError = m.userFacingError(msg.err)
+		m.scrapeDuration = time.Since(m.scrapeStartTime)
 		// Move to review step even if scraping failed.
 		m.step = stepReview
 		m.currentField = 1
@@ -327,6 +349,9 @@ func (m *addLinkForm) startScraping() (tea.Model, tea.Cmd) {
 	m.scrapeResult = nil
 	m.scrapeProgress = scraper.StageHealthCheck
 	m.scrapeProgressMsg = "Starting scrape..."
+	m.scrapeStartTime = time.Now()
+	m.scrapeDuration = 0
+	m.progressChan = make(chan scrapeProgressMsg, 10)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(m.scrapeTimeoutSeconds)*time.Second)
 	m.scrapeCtx = ctx
@@ -336,6 +361,7 @@ func (m *addLinkForm) startScraping() (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(
 		m.runScrapeCommand(ctx, urlStr),
+		m.watchProgress(),
 	)
 }
 
@@ -348,28 +374,23 @@ func (m *addLinkForm) runScrapeCommand(ctx context.Context, url string) tea.Cmd 
 			}
 		}()
 
-		progressChan := make(chan scrapeProgressMsg, 4)
-
-		// Progress reporter.
-		go func() {
-			for msg := range progressChan {
-				// Send progress messages back into the Bubble Tea event loop.
-				// We can't directly send tea.Msg here, so just push onto channel;
-				// the outer closure will read and forward.
-				_ = msg
-			}
-		}()
-
+		// Progress callback that writes to the model's progress channel
 		cb := func(stage scraper.ScrapeStage, message string) {
-			progressChan <- scrapeProgressMsg{
+			select {
+			case m.progressChan <- scrapeProgressMsg{
 				stage:   stage,
 				message: message,
+			}:
+			case <-ctx.Done():
+				return
 			}
 		}
 
+		// Run scrape (this blocks until complete)
 		result, err := m.scraperService.ScrapeWithProgress(ctx, url, m.scrapeTimeoutSeconds, cb)
 
-		close(progressChan)
+		// Close progress channel to signal completion
+		close(m.progressChan)
 
 		if err != nil {
 			return scrapeErrorMsg{err: err}
@@ -377,6 +398,30 @@ func (m *addLinkForm) runScrapeCommand(ctx context.Context, url string) tea.Cmd 
 
 		return scrapeSuccessMsg{result: result}
 	}
+}
+
+// watchProgress periodically reads from the progress channel and sends updates
+func (m *addLinkForm) watchProgress() tea.Cmd {
+	return func() tea.Msg {
+		// Read from progress channel if available
+		select {
+		case progress, ok := <-m.progressChan:
+			if ok {
+				// Send progress message and continue watching
+				return progress
+			}
+			// Channel closed, stop watching
+			return progressTickMsg{done: true}
+		default:
+			// No progress yet, check again soon
+			return progressTickMsg{done: false}
+		}
+	}
+}
+
+// progressTickMsg is sent to continue watching for progress updates
+type progressTickMsg struct {
+	done bool
 }
 
 // submit builds the API payload and submits the link creation request.
@@ -423,18 +468,26 @@ func (m *addLinkForm) View() string {
 			} else {
 				title = "(no title)"
 			}
-			return fmt.Sprintf(
+
+			successMsg := fmt.Sprintf(
 				"\n✓ Link created successfully!\n\n"+
 					"  ID:          %s\n"+
 					"  URL:         %s\n"+
 					"  Title:       %s\n"+
-					"  Created:     %s\n\n"+
-					"Press any key to exit...",
+					"  Created:     %s\n",
 				m.created.ID.String()[:8]+"...",
 				m.created.URL,
 				title,
 				m.created.CreatedAt.Format("2006-01-02 15:04"),
 			)
+
+			// Add scraping duration if scraping was performed
+			if m.scrapeDuration > 0 && m.scrapeResult != nil {
+				successMsg += fmt.Sprintf("  Scraped in:   %s\n", m.scrapeDuration.Round(time.Millisecond))
+			}
+
+			successMsg += "\nPress any key to exit..."
+			return successMsg
 		}
 		return "\n✓ Link created successfully!\n\nPress any key to exit..."
 

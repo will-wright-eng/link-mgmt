@@ -6,6 +6,8 @@ import (
 	"text/tabwriter"
 
 	"link-mgmt-go/pkg/cli/tui"
+	"link-mgmt-go/pkg/models"
+	"link-mgmt-go/pkg/utils"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -62,21 +64,53 @@ func (a *App) ListLinks() {
 	fmt.Printf("\nTotal: %d link(s)\n", len(links))
 }
 
-// AddLink prompts the user for link information and creates a new link
-func (a *App) AddLink() {
+// AddLink creates a new link with the provided URL
+// If url is empty, it launches the interactive TUI form
+func (a *App) AddLink(url string) error {
 	apiClient, err := a.getClient()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
-	// Create and run the basic add link TUI form
-	form := tui.NewBasicAddLinkForm(apiClient)
-	p := tea.NewProgram(form)
-	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error running form: %v\n", err)
-		os.Exit(1)
+	// If no URL provided, launch interactive TUI form
+	if url == "" {
+		form := tui.NewBasicAddLinkForm(apiClient)
+		p := tea.NewProgram(form)
+		if _, err := p.Run(); err != nil {
+			return fmt.Errorf("error running form: %w", err)
+		}
+		return nil
 	}
+
+	// Validate URL
+	validatedURL, err := utils.ValidateURL(url)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	// Create link with just the URL
+	linkCreate := models.LinkCreate{
+		URL: validatedURL,
+	}
+
+	created, err := apiClient.CreateLink(linkCreate)
+	if err != nil {
+		return fmt.Errorf("failed to create link: %w", err)
+	}
+
+	// Print success message
+	title := "(no title)"
+	if created.Title != nil && *created.Title != "" {
+		title = *created.Title
+	}
+
+	fmt.Printf("✓ Link created successfully!\n\n")
+	fmt.Printf("  ID:    %s\n", created.ID.String()[:8]+"...")
+	fmt.Printf("  URL:   %s\n", created.URL)
+	fmt.Printf("  Title: %s\n", title)
+	fmt.Printf("  Created: %s\n", created.CreatedAt.Format("2006-01-02 15:04"))
+
+	return nil
 }
 
 // DeleteLink prompts the user to select and delete a link

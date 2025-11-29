@@ -10,25 +10,15 @@ RUN apt-get update && \
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
-# Set working directory
 WORKDIR /app
 
-# Copy dependency files
 COPY package.json bun.lock ./
 
-# Install dependencies
 RUN bun install
 
-# Copy source code
 COPY src ./src
 COPY tsconfig.json ./
 
-# Expose port
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
-
-# Run server
 CMD ["bun", "run", "src/server.ts"]
