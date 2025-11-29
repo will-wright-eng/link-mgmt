@@ -6,8 +6,51 @@ This document describes the design for a reusable viewport wrapper and common co
 
 1. **Automatic terminal size handling** - Responsive layouts that adapt to terminal dimensions
 2. **Viewport management** - Scrolling for content that exceeds terminal height
-3. **Common commands** - Global keyboard shortcuts (help, menu, quit) available in all flows
+3. **Common commands** - Global keyboard shortcuts (help, quit) available in all flows
 4. **Easy integration** - Minimal changes required to existing models
+
+**Note**: This document describes a **proposed design** for future enhancement. The current TUI implementation uses a simplified structure with two main flows (Add Link and Manage Links). The viewport wrapper is not yet implemented, but this design document outlines how it could be integrated.
+
+---
+
+## Current TUI Structure
+
+The current TUI implementation has a simplified, streamlined structure:
+
+### Root Menu (`root.go`)
+
+- **2 options**:
+  1. Add link (with scraping)
+  2. Manage links (list, view, delete, scrape)
+- Navigation: Number keys (`1`, `2`) to select options
+- Quit: `q` / `Esc` / `Ctrl+C`
+
+### Add Link Flow (`form_add_link.go`)
+
+- **Steps**: URL Input → Scraping (optional) → Review & Edit → Success
+- **Navigation**:
+    - Tab/Shift+Tab to navigate fields
+    - `Enter` to submit/save
+    - `s` to skip scraping
+    - `Esc` / `Ctrl+C` to cancel/quit
+
+### Manage Links Flow (`manage_links.go`)
+
+A **combined flow** that handles multiple operations:
+
+- **List Links**: Navigate with `↑/↓` or `j/k`, `Enter` to select
+- **Action Menu**: Choose view details, delete, or scrape
+- **View Details**: Display full link information
+- **Delete**: Confirmation step
+- **Scrape**: Progress tracking with cancellation
+- **Navigation**: `Esc` / `b` to go back, `q` to quit
+
+**Key Design Decisions**:
+
+- Simplified menu (2 options instead of many separate flows)
+- Combined manage flow reduces navigation complexity
+- Menu navigation command (`m` key) proposed for quick return to root menu
+- Help overlay not yet implemented (design proposal)
 
 ---
 
@@ -93,9 +136,10 @@ type ViewportConfig struct {
     MinHeight     int   // Minimum terminal height
 
     // Common commands
-    EnableHelp    bool  // Enable '?' for help
-    EnableMenu    bool  // Enable 'm' to return to menu
+    EnableHelp    bool  // Enable '?' for help (proposed)
+    EnableMenu    bool  // Enable 'm' to return to menu (proposed)
     HelpContent   func() string  // Function to generate help text
+    OnMenu        func() tea.Cmd  // Callback for menu command
 
     // Styling
     HeaderStyle   lipgloss.Style
@@ -105,16 +149,21 @@ type ViewportConfig struct {
 
 ### 2. Common Commands
 
-Global keyboard shortcuts available in all flows:
+**Current Implementation** (what exists today):
 
-| Key | Command | Description |
-|-----|---------|-------------|
-| `?` | Help | Toggle help overlay showing keyboard shortcuts |
-| `m` | Menu | Return to root menu (if not already there) |
-| `q` / `Esc` | Quit | Exit the application |
-| `Ctrl+C` | Force Quit | Force exit (handled by Bubble Tea) |
+- `q` / `Esc` / `Ctrl+C`: Quit/Exit application (available in all flows)
+- Flow-specific commands vary by context
 
-**Help Overlay**:
+**Proposed Enhancement** (with viewport wrapper):
+
+| Key | Command | Description | Status |
+|-----|---------|-------------|--------|
+| `?` | Help | Toggle help overlay showing keyboard shortcuts | **Proposed** |
+| `m` | Menu | Return to root menu (if not already there) | **Proposed** |
+| `q` / `Esc` | Quit | Exit the application | ✅ Current |
+| `Ctrl+C` | Force Quit | Force exit (handled by Bubble Tea) | ✅ Current |
+
+**Help Overlay** (Proposed):
 
 - Shows context-sensitive help based on current flow
 - Can be toggled on/off
@@ -193,9 +242,9 @@ type ViewportConfig struct {
     UseViewport   bool
     MinWidth      int
     MinHeight     int
-    EnableHelp    bool
-    EnableMenu    bool
-    HelpContent   func() string
+    EnableHelp    bool  // Enable help overlay (proposed)
+    EnableMenu    bool  // Enable menu navigation (proposed)
+    HelpContent   func() string  // Function to generate help text
     OnMenu        func() tea.Cmd  // Callback for menu command
 }
 
@@ -376,7 +425,7 @@ func (w *ViewportWrapper) renderHeader() string {
     // Breadcrumb or navigation hint
     if w.config.EnableMenu {
         b.WriteString(helpStyle.Render("Press 'm' for menu, '?' for help"))
-    } else {
+    } else if w.config.EnableHelp {
         b.WriteString(helpStyle.Render("Press '?' for help"))
     }
 
@@ -460,31 +509,36 @@ func CommonHelpContent() string {
 // RootMenuHelpContent returns help for root menu
 func RootMenuHelpContent() string {
     items := []HelpItem{
-        {"1-6", "Select menu option"},
+        {"1-2", "Select menu option (Add link / Manage links)"},
         {"q / Esc", "Quit"},
         {"?", "Show this help"},
     }
     return renderHelpItems(items)
 }
 
-// ListLinksHelpContent returns help for list links flow
-func ListLinksHelpContent() string {
+// ManageLinksHelpContent returns help for manage links flow
+func ManageLinksHelpContent() string {
     items := []HelpItem{
-        {"↑ / ↓ / j / k", "Navigate list"},
-        {"Enter", "View details / Exit"},
+        {"↑ / ↓ / j / k", "Navigate link list"},
+        {"Enter", "Select link"},
+        {"Esc / b", "Go back"},
+        {"1 / v", "View details"},
+        {"2 / d", "Delete link"},
+        {"3 / s", "Scrape & enrich"},
         {"m", "Return to menu"},
-        {"q / Esc", "Quit"},
+        {"q", "Quit"},
         {"?", "Show this help"},
     }
     return renderHelpItems(items)
 }
 
-// FormHelpContent returns help for form flows
-func FormHelpContent() string {
+// AddLinkFormHelpContent returns help for add link form
+func AddLinkFormHelpContent() string {
     items := []HelpItem{
-        {"Tab / Shift+Tab", "Navigate fields"},
-        {"Enter", "Submit / Continue"},
-        {"Esc", "Cancel"},
+        {"Enter", "Start scraping (URL input) / Save link (review)"},
+        {"s", "Skip scraping, go to review"},
+        {"Tab / Shift+Tab", "Navigate fields (review step)"},
+        {"Esc", "Cancel / Quit"},
         {"m", "Return to menu"},
         {"?", "Show this help"},
     }
@@ -510,6 +564,8 @@ func renderHelpItems(items []HelpItem) string {
 ### Step 1: Wrap Root Model
 
 **File**: `pkg/cli/tui/root.go`
+
+**Current structure**: Root menu with 2 options (Add link, Manage links)
 
 ```go
 func NewRootModel(
@@ -542,28 +598,41 @@ func NewRootModel(
 }
 ```
 
-### Step 2: Wrap List Links Model
+### Step 2: Wrap Manage Links Model
 
-**File**: `pkg/cli/tui/list_links.go`
+**File**: `pkg/cli/tui/manage_links.go`
+
+**Current structure**: Combined flow handling list, view, delete, and scrape operations
 
 ```go
-func NewListLinksModel(c *client.Client) tea.Model {
-    model := &listLinksModel{
-        client: c,
+func NewManageLinksModel(
+    c *client.Client,
+    scraperService *scraper.ScraperService,
+    timeoutSeconds int,
+) tea.Model {
+    if timeoutSeconds <= 0 {
+        timeoutSeconds = 30
+    }
+
+    model := &manageLinksModel{
+        client:         c,
+        scraperService: scraperService,
+        timeoutSeconds: timeoutSeconds,
+        // ... existing initialization
     }
 
     // Wrap with viewport (enable scrolling for long lists)
     return NewViewportWrapper(model, ViewportConfig{
-        Title:       "Your Links",
+        Title:       "Manage Links",
         ShowHeader:  true,
         ShowFooter:  true,
-        UseViewport: true,  // Enable scrolling
+        UseViewport: true,  // Enable scrolling for long link lists
         EnableHelp:  true,
         EnableMenu:  true,
-        HelpContent: ListLinksHelpContent,
+        HelpContent: ManageLinksHelpContent,
         OnMenu: func() tea.Cmd {
-            // Return to root menu
-            return tea.Quit  // Root will handle showing menu
+            // Return to root menu - root will handle showing menu
+            return tea.Quit
         },
         MinWidth:    60,
         MinHeight:   10,
@@ -571,11 +640,54 @@ func NewListLinksModel(c *client.Client) tea.Model {
 }
 ```
 
-### Step 3: Update Root Model to Handle Menu Navigation
+### Step 3: Wrap Add Link Form
+
+**File**: `pkg/cli/tui/form_add_link.go`
+
+**Current structure**: URL input → Scraping → Review → Success
+
+```go
+func NewAddLinkForm(
+    apiClient *client.Client,
+    scraperService *scraper.ScraperService,
+    scrapeTimeoutSeconds int,
+) tea.Model {
+    form := &addLinkForm{
+        client:               apiClient,
+        scraperService:       scraperService,
+        scrapeTimeoutSeconds: scrapeTimeoutSeconds,
+        // ... existing initialization
+    }
+
+    // Wrap with viewport
+    return NewViewportWrapper(form, ViewportConfig{
+        Title:       "Add New Link",
+        ShowHeader:  true,
+        ShowFooter:  true,
+        UseViewport: false,  // Forms are typically short
+        EnableHelp:  true,
+        EnableMenu:  true,
+        HelpContent: AddLinkFormHelpContent,
+        OnMenu: func() tea.Cmd {
+            // Return to root menu - root will handle showing menu
+            return tea.Quit
+        },
+        MinWidth:    60,
+        MinHeight:   15,
+    })
+}
+```
+
+### Step 4: Update Root Model to Handle Menu Navigation
 
 **File**: `pkg/cli/tui/root.go`
 
+To support menu navigation from child flows, the root model needs to handle a menu navigation message:
+
 ```go
+// MenuNavigationMsg signals that we should return to the root menu
+type MenuNavigationMsg struct{}
+
 func (m *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
     // Handle menu navigation message
     switch msg := msg.(type) {
@@ -589,34 +701,7 @@ func (m *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 ```
 
-### Step 4: Update Forms to Use Wrapper
-
-**File**: `pkg/cli/tui/form_add_link.go`
-
-```go
-func NewAddLinkForm(
-    apiClient *client.Client,
-    scraperService *scraper.ScraperService,
-    scrapeTimeoutSeconds int,
-) tea.Model {
-    form := &addLinkForm{
-        // ... existing initialization
-    }
-
-    // Wrap with viewport
-    return NewViewportWrapper(form, ViewportConfig{
-        Title:       "Add New Link",
-        ShowHeader:  true,
-        ShowFooter:  true,
-        UseViewport: false,  // Forms are typically short
-        EnableHelp:  true,
-        EnableMenu:  true,
-        HelpContent: FormHelpContent,
-        MinWidth:    60,
-        MinHeight:   15,
-    })
-}
-```
+Alternatively, flows can use `tea.Quit` to exit back to root, and the root will naturally show the menu when `current` is `nil`.
 
 ---
 
@@ -636,36 +721,33 @@ func NewAddLinkForm(
 ### Phase 2: Root Menu (Low Risk)
 
 1. Wrap root model with viewport wrapper
-2. Test menu navigation and help
+2. Test option selection and help overlay
 3. Verify responsive layout
 
 **Files to modify**:
 
 - `pkg/cli/tui/root.go`
 
-### Phase 3: List Views (Medium Risk)
+### Phase 3: Manage Links Flow (Medium Risk)
 
-1. Wrap `listLinksModel` with viewport
-2. Enable scrolling for long lists
+1. Wrap `manageLinksModel` with viewport
+2. Enable scrolling for long link lists
 3. Test with various list sizes
+4. Verify all sub-flows (view, delete, scrape) work with wrapper
 
 **Files to modify**:
 
-- `pkg/cli/tui/list_links.go`
-- `pkg/cli/tui/view_link_details.go`
+- `pkg/cli/tui/manage_links.go`
 
-### Phase 4: Forms (Low Risk)
+### Phase 4: Add Link Form (Low Risk)
 
-1. Wrap all form models
-2. Test form navigation with help
-3. Verify menu navigation from forms
+1. Wrap add link form model
+2. Test form navigation with help overlay
+3. Verify scraping flow works with wrapper
 
 **Files to modify**:
 
 - `pkg/cli/tui/form_add_link.go`
-- `pkg/cli/tui/form_basic_add_link.go`
-- `pkg/cli/tui/form_delete_link.go`
-- `pkg/cli/tui/form_scrape_existing_link.go`
 
 ### Phase 5: Polish (Low Risk)
 
@@ -680,9 +762,9 @@ func NewAddLinkForm(
 
 ### 1. **Consistent UX**
 
-- All flows have the same keyboard shortcuts
-- Help is always available
-- Menu navigation works from anywhere
+- All flows have consistent keyboard shortcuts
+- Help overlay available when needed (proposed)
+- Menu navigation (`m` key) for quick return to root menu (proposed)
 
 ### 2. **Responsive Design**
 
@@ -721,19 +803,19 @@ func NewAddLinkForm(
 ### Integration Tests
 
 1. **Root Menu**:
-   - Menu navigation
-   - Help display
+   - Option selection (1-2)
+   - Help overlay display
    - Terminal resize
 
-2. **List Views**:
-   - Scrolling with viewport
+2. **Manage Links Flow**:
+   - Scrolling with viewport for long lists
    - Navigation with help overlay
-   - Menu return
+   - All sub-flows (view, delete, scrape)
 
-3. **Forms**:
+3. **Add Link Form**:
    - Form interaction with wrapper
    - Help during form filling
-   - Menu navigation
+   - Scraping flow integration
 
 ### Manual Testing
 
@@ -744,9 +826,10 @@ func NewAddLinkForm(
    - Resize during use
 
 2. **Keyboard Shortcuts**:
-   - Help toggle in all flows
-   - Menu navigation
-   - Quit from various states
+   - Help toggle (`?`) in all flows
+   - Menu navigation (`m`) from child flows
+   - Quit (`q`/`Esc`) from various states
+   - Flow-specific navigation keys
 
 3. **Edge Cases**:
    - Very small terminal
@@ -799,11 +882,23 @@ Add mouse support for:
 
 This design provides:
 
-✅ **Reusable viewport wrapper** that handles terminal sizing automatically
-✅ **Common commands** (help, menu, quit) available in all flows
-✅ **Easy integration** with minimal changes to existing models
+✅ **Reusable viewport wrapper** (proposed) that handles terminal sizing automatically
+✅ **Common commands** (help overlay and menu navigation proposed, quit already available)
+✅ **Easy integration** with minimal changes to existing simplified models
 ✅ **Responsive layouts** that adapt to terminal size
 ✅ **Scrollable content** for long lists
 ✅ **Consistent UX** across all flows
+
+**Current State**:
+
+- TUI has been simplified to 2 main flows (Add Link, Manage Links)
+- Quit commands (`q`/`Esc`/`Ctrl+C`) work consistently across all flows
+
+**Proposed Enhancements**:
+
+- Viewport wrapper for automatic terminal sizing and scrolling
+- Help overlay system (`?` key) for context-sensitive keyboard shortcuts
+- Menu navigation (`m` key) for quick return to root menu from any flow
+- Enhanced responsive layout handling
 
 The wrapper pattern allows us to add this functionality without major refactoring, making it a low-risk, high-value improvement to the TUI.
