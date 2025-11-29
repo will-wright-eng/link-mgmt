@@ -118,18 +118,18 @@ func (m *rootModel) View() string {
 
 	var b strings.Builder
 
-	b.WriteString("\nLink Management TUI\n")
-	b.WriteString(strings.Repeat("─", 24))
+	b.WriteString(renderTitle("Link Management"))
+	b.WriteString(renderDivider(60))
 	b.WriteString("\n\n")
-	b.WriteString("Select an action:\n\n")
-	b.WriteString("  1) Add link (basic)\n")
-	b.WriteString("  2) Add link (with scraping)\n")
-	b.WriteString("  3) Delete link\n")
-	b.WriteString("  4) List links\n")
-	b.WriteString("  5) Scrape & enrich existing link\n")
-	b.WriteString("  6) View link details\n")
+	b.WriteString(boldStyle.Render("Select an action:") + "\n\n")
+	b.WriteString("  " + selectedMarkerStyle.Render("1)") + " Add link (basic)\n")
+	b.WriteString("  " + selectedMarkerStyle.Render("2)") + " Add link (with scraping)\n")
+	b.WriteString("  " + selectedMarkerStyle.Render("3)") + " Delete link\n")
+	b.WriteString("  " + selectedMarkerStyle.Render("4)") + " List links\n")
+	b.WriteString("  " + selectedMarkerStyle.Render("5)") + " Scrape & enrich existing link\n")
+	b.WriteString("  " + selectedMarkerStyle.Render("6)") + " View link details\n")
 	b.WriteString("\n")
-	b.WriteString("Press the number of an option, or 'q' / Esc to quit.\n")
+	b.WriteString(helpStyle.Render("Press the number of an option, or 'q' / Esc to quit.") + "\n")
 
 	return b.String()
 }

@@ -12,7 +12,6 @@ import (
 	"link-mgmt-go/pkg/scraper"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // scrapeExistingLinkForm lets the user select an existing link, scrape its URL,
@@ -147,20 +146,14 @@ func (m *scrapeExistingLinkForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *scrapeExistingLinkForm) handleSelectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "ctrl+c", "esc":
+	if handleQuitKeys(msg.String()) {
 		return m, tea.Quit
-	case "up", "k":
-		if m.selected > 0 {
-			m.selected--
-		}
+	}
+	if newSelected, handled := handleListNavigation(msg.String(), m.selected, len(m.links)); handled {
+		m.selected = newSelected
 		return m, nil
-	case "down", "j":
-		if m.selected < len(m.links)-1 {
-			m.selected++
-		}
-		return m, nil
-	case "enter":
+	}
+	if msg.String() == "enter" {
 		// Start scraping for the selected link.
 		if m.selected < 0 || m.selected >= len(m.links) {
 			return m, nil
@@ -261,7 +254,7 @@ func (m *scrapeExistingLinkForm) View() string {
 	case stepScrapeRunning:
 		return m.renderScraping()
 	case stepScrapeSaving:
-		return "\nSaving enriched content...\n"
+		return "\n" + infoStyle.Render("Saving enriched content...") + "\n"
 	case stepScrapeDone:
 		return m.renderDone()
 	default:
@@ -271,86 +264,34 @@ func (m *scrapeExistingLinkForm) View() string {
 
 func (m *scrapeExistingLinkForm) renderSelect() string {
 	if m.err != nil {
-		return fmt.Sprintf("\n❌ Error: %v\n\nPress any key to exit...", m.err)
+		return renderErrorView(m.err)
 	}
 
 	if len(m.links) == 0 {
-		return "\nNo links available to enrich.\n\nPress any key to exit..."
+		return renderEmptyState("No links available to enrich.")
 	}
 
-	var b strings.Builder
-	b.WriteString("\nScrape & Enrich Existing Link\n\n")
-	b.WriteString("Select a link whose title/text you want to fill from scraped content:\n\n")
-
-	for i, link := range m.links {
-		marker := " "
-		if i == m.selected {
-			marker = "→"
-		}
-
-		title := "(no title)"
-		if link.Title != nil && *link.Title != "" {
-			title = *link.Title
-		}
-
-		url := link.URL
-		if len(url) > 60 {
-			url = url[:57] + "..."
-		}
-
-		style := lipgloss.NewStyle()
-		if i == m.selected {
-			style = style.Bold(true)
-		}
-
-		b.WriteString(fmt.Sprintf("%s %s\n    %s\n", marker, style.Render(title), url))
-	}
-
-	b.WriteString("\n(Use ↑/↓ or j/k to navigate, Enter to scrape, Esc to cancel)\n")
-	return b.String()
+	s := renderLinkList(m.links, m.selected, "Scrape & Enrich Existing Link",
+		"Select a link whose title/text you want to fill from scraped content:")
+	s += helpStyle.Render("(Use ↑/↓ or j/k to navigate, Enter to scrape, Esc to cancel)") + "\n"
+	return s
 }
 
 func (m *scrapeExistingLinkForm) renderScraping() string {
-	var b strings.Builder
-	b.WriteString("\nScraping selected link...\n\n")
-
-	stageLabel := string(m.scrapeStage)
-	if stageLabel == "" {
-		stageLabel = "starting"
-	}
-	b.WriteString(fmt.Sprintf("Stage: %s\n", stageLabel))
-	if m.scrapeMessage != "" {
-		b.WriteString(m.scrapeMessage)
-		b.WriteString("\n")
-	}
-
-	b.WriteString("\nThis may take a few seconds.\n")
-	b.WriteString("Press Esc to cancel.\n")
-	return b.String()
+	return renderScrapingProgress("Scraping Selected Link", string(m.scrapeStage), m.scrapeMessage)
 }
 
 func (m *scrapeExistingLinkForm) renderDone() string {
 	if m.err != nil {
-		return fmt.Sprintf("\n❌ Error: %v\n\nPress any key to exit...", m.err)
+		return renderErrorView(m.err)
 	}
 	if m.scrapeError != nil {
-		return fmt.Sprintf("\n⚠️  Scraping failed: %v\n\nPress any key to exit...", m.scrapeError)
+		return renderWarningView(fmt.Sprintf("Scraping failed: %v", m.scrapeError))
 	}
 
 	if m.updated == nil {
-		return "\nDone. (No changes applied.)\n\nPress any key to exit..."
+		return renderEmptyState("Done. (No changes applied.)")
 	}
 
-	title := "(no title)"
-	if m.updated.Title != nil && *m.updated.Title != "" {
-		title = *m.updated.Title
-	}
-
-	var b strings.Builder
-	b.WriteString("\n✓ Link enriched successfully!\n\n")
-	b.WriteString(fmt.Sprintf("  ID:      %s\n", m.updated.ID.String()[:8]+"..."))
-	b.WriteString(fmt.Sprintf("  URL:     %s\n", m.updated.URL))
-	b.WriteString(fmt.Sprintf("  Title:   %s\n", title))
-	b.WriteString("\nPress any key to exit...\n")
-	return b.String()
+	return renderSuccessWithDetails("Link enriched successfully!", m.updated, false)
 }

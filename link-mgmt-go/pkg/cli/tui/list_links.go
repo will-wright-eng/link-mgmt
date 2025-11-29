@@ -5,10 +5,10 @@ import (
 	"strings"
 
 	"link-mgmt-go/pkg/cli/client"
+	linkformatter "link-mgmt-go/pkg/cli/links"
 	"link-mgmt-go/pkg/models"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // listLinksModel is a simple Bubble Tea model that loads and displays links.
@@ -64,42 +64,47 @@ func (m *listLinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *listLinksModel) View() string {
 	if !m.ready {
-		return "\nLoading links...\n"
+		return renderLoadingState("Loading links...")
 	}
 
 	if m.err != nil {
-		return fmt.Sprintf("\n❌ Error loading links: %v\n\nPress any key to exit...", m.err)
+		return renderErrorView(fmt.Errorf("Error loading links: %v", m.err))
 	}
 
 	if len(m.links) == 0 {
-		return "\nNo links found.\n\nPress any key to exit..."
+		return renderEmptyState("No links found.")
 	}
 
 	var b strings.Builder
-	b.WriteString("\nYour Links\n")
-	b.WriteString(strings.Repeat("─", 10))
+	b.WriteString(renderTitle("Your Links"))
+	b.WriteString(renderDivider(60))
 	b.WriteString("\n\n")
 
-	for _, link := range m.links {
-		title := "(no title)"
-		if link.Title != nil && *link.Title != "" {
-			title = *link.Title
+	for i, link := range m.links {
+		title := linkformatter.GetTitle(link)
+		url := linkformatter.TruncateURL(link.URL, 60)
+		idShort := linkformatter.ShortenID(link.ID)
+
+		// Add spacing between items (except after last)
+		if i > 0 {
+			b.WriteString("\n")
 		}
 
-		url := link.URL
-		if len(url) > 60 {
-			url = url[:57] + "..."
-		}
+		// ID with styling
+		b.WriteString(linkIDStyle.Render(idShort))
+		b.WriteString("  ")
 
-		idShort := link.ID.String()[:8] + "..."
-		line := fmt.Sprintf("%s  %s\n    %s\n",
-			lipgloss.NewStyle().Bold(true).Render(idShort),
-			title,
-			url,
-		)
-		b.WriteString(line)
+		// Title with styling
+		b.WriteString(linkTitleStyle.Render(title))
+		b.WriteString("\n  ")
+
+		// URL with styling (indented)
+		b.WriteString(linkURLStyle.Render(url))
 	}
 
-	b.WriteString("\nPress Enter, Esc, or q to exit.\n")
+	b.WriteString("\n\n")
+	b.WriteString(helpStyle.Render("Press Enter, Esc, or q to exit."))
+	b.WriteString("\n")
+
 	return b.String()
 }

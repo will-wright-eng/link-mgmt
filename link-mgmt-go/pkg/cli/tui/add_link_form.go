@@ -15,7 +15,6 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // addLinkForm is the Bubble Tea model for the enhanced add-link flow with scraping.
@@ -462,34 +461,23 @@ func (m *addLinkForm) View() string {
 	switch m.step {
 	case stepSuccess:
 		if m.created != nil {
-			title := ""
-			if m.created.Title != nil && *m.created.Title != "" {
-				title = *m.created.Title
-			} else {
-				title = "(no title)"
-			}
-
-			successMsg := fmt.Sprintf(
-				"\n✓ Link created successfully!\n\n"+
-					"  ID:          %s\n"+
-					"  URL:         %s\n"+
-					"  Title:       %s\n"+
-					"  Created:     %s\n",
-				m.created.ID.String()[:8]+"...",
-				m.created.URL,
-				title,
-				m.created.CreatedAt.Format("2006-01-02 15:04"),
-			)
+			var b strings.Builder
+			b.WriteString("\n")
+			b.WriteString(renderSuccess("Link created successfully!"))
+			b.WriteString("\n\n")
+			b.WriteString(renderLinkDetails(m.created, false))
 
 			// Add scraping duration if scraping was performed
 			if m.scrapeDuration > 0 && m.scrapeResult != nil {
-				successMsg += fmt.Sprintf("  Scraped in:   %s\n", m.scrapeDuration.Round(time.Millisecond))
+				b.WriteString(fieldLabelStyle.Render("Scraped in:"))
+				b.WriteString(fmt.Sprintf(" %s\n", m.scrapeDuration.Round(time.Millisecond)))
 			}
 
-			successMsg += "\nPress any key to exit..."
-			return successMsg
+			b.WriteString("\n")
+			b.WriteString(helpStyle.Render("Press any key to exit...") + "\n")
+			return b.String()
 		}
-		return "\n✓ Link created successfully!\n\nPress any key to exit..."
+		return renderSuccessView("Link created successfully!")
 
 	case stepURLInput:
 		return m.renderURLInput()
@@ -506,83 +494,79 @@ func (m *addLinkForm) View() string {
 
 func (m *addLinkForm) renderURLInput() string {
 	var b strings.Builder
-	b.WriteString("\nAdd New Link\n\n")
-	b.WriteString("URL (required):\n")
+	b.WriteString(renderTitle("Add New Link"))
+	b.WriteString(fieldLabelStyle.Render("URL (required):"))
+	b.WriteString("\n")
 	b.WriteString(m.urlInput.View())
 
 	if m.err != nil {
-		b.WriteString(fmt.Sprintf("\n\n❌ %s", m.err))
+		b.WriteString("\n\n")
+		b.WriteString(renderInlineError(m.err))
 	}
 
 	b.WriteString("\n\n")
-	b.WriteString("Press Enter to scrape, 's' to skip scraping, Esc to cancel")
+	b.WriteString(helpStyle.Render("Press Enter to scrape, 's' to skip scraping, Esc to cancel"))
 
 	return b.String()
 }
 
 func (m *addLinkForm) renderScraping() string {
-	var b strings.Builder
-	b.WriteString("\nScraping URL...\n\n")
-	stageLabel := string(m.scrapeProgress)
-	if stageLabel == "" {
-		stageLabel = "starting"
-	}
-	b.WriteString(fmt.Sprintf("Stage: %s\n", stageLabel))
-	if m.scrapeProgressMsg != "" {
-		b.WriteString(m.scrapeProgressMsg)
-		b.WriteString("\n")
-	}
-	b.WriteString("\nThis may take a few seconds.\n")
-	b.WriteString("Press Esc to cancel.")
-	return b.String()
+	return renderScrapingProgress("Scraping URL", string(m.scrapeProgress), m.scrapeProgressMsg)
 }
 
 func (m *addLinkForm) renderReview() string {
 	var b strings.Builder
-	b.WriteString("\nReview & Edit Link\n\n")
+	b.WriteString(renderTitle("Review & Edit Link"))
 
 	// URL (read-only)
-	b.WriteString("✓ URL: " + m.urlInput.Value() + "\n\n")
+	b.WriteString(successStyle.Render("✓"))
+	b.WriteString(" ")
+	b.WriteString(fieldLabelStyle.Render("URL:"))
+	b.WriteString(" " + m.urlInput.Value() + "\n\n")
 
 	// Title field
-	b.WriteString("Title: ")
+	b.WriteString(fieldLabelStyle.Render("Title:"))
 	if m.scrapeResult != nil && m.scrapeResult.Title != "" {
-		b.WriteString("(scraped) ")
+		b.WriteString(" " + mutedStyle.Render("(scraped)"))
 	}
 	b.WriteString("\n")
 	if m.currentField == 1 {
-		b.WriteString(lipgloss.NewStyle().Bold(true).Render(m.titleInput.View()))
+		b.WriteString(selectedStyle.Render(m.titleInput.View()))
 	} else {
 		b.WriteString(m.titleInput.View())
 	}
 	b.WriteString("\n\n")
 
 	// Description field
-	b.WriteString("Description (optional):\n")
+	b.WriteString(fieldLabelStyle.Render("Description (optional):"))
+	b.WriteString("\n")
 	if m.currentField == 2 {
-		b.WriteString(lipgloss.NewStyle().Bold(true).Render(m.descInput.View()))
+		b.WriteString(selectedStyle.Render(m.descInput.View()))
 	} else {
 		b.WriteString(m.descInput.View())
 	}
 	b.WriteString("\n\n")
 
 	// Text field
-	b.WriteString("Text (optional):\n")
+	b.WriteString(fieldLabelStyle.Render("Text (optional):"))
+	b.WriteString("\n")
 	if m.currentField == 3 {
-		b.WriteString(lipgloss.NewStyle().Bold(true).Render(m.textInput.View()))
+		b.WriteString(selectedStyle.Render(m.textInput.View()))
 	} else {
 		b.WriteString(m.textInput.View())
 	}
 
 	if m.scrapeError != nil {
-		b.WriteString(fmt.Sprintf("\n\n⚠️  Scraping failed: %v (you can still fill fields manually)", m.scrapeError))
+		b.WriteString("\n\n")
+		b.WriteString(renderInlineWarning(fmt.Sprintf("Scraping failed: %v (you can still fill fields manually)", m.scrapeError)))
 	}
 	if m.err != nil {
-		b.WriteString(fmt.Sprintf("\n\n❌ %v", m.err))
+		b.WriteString("\n\n")
+		b.WriteString(renderInlineError(m.err))
 	}
 
 	b.WriteString("\n\n")
-	b.WriteString("[Tab] Navigate  [Enter] Save  [Esc] Cancel")
+	b.WriteString(helpStyle.Render("[Tab] Navigate  [Enter] Save  [Esc] Cancel"))
 
 	return b.String()
 }

@@ -15,8 +15,10 @@ This document outlines the design for an interactive Terminal User Interface (TU
 - ✅ Bubble Tea TUI framework (already in dependencies)
 - ✅ Scraper service client implemented (`pkg/scraper/client.go`)
 - ✅ API client implemented (`pkg/cli/client/`)
-- ✅ Basic add link form exists (`pkg/cli/app.go` - `addLinkForm`)
+- ✅ Root TUI model with menu system (`pkg/cli/tui/root.go`)
+- ✅ Multiple TUI forms implemented (add, delete, list, view, scrape existing)
 - ✅ Configuration with `BaseURL` and `ScrapeTimeout`
+- ✅ Integration between CLI commands and TUI forms
 
 ---
 
@@ -112,10 +114,58 @@ This document outlines the design for an interactive Terminal User Interface (TU
 ```
 pkg/cli/
 ├── app.go                    # Main CLI app: wiring, config, and Program startup
-├── tui/                      # TUI models and views
-│   └── add_link_form.go      # Enhanced add link form with scraping (implemented)
+│                             # - App.Run() launches root TUI model for interactive mode
+│                             # - App.getClient() and App.getScraperService() provide dependencies
+├── links.go                  # CLI command handlers that launch TUI forms
+│                             # - AddLink() launches basic_add_link_form when no URL provided
+│                             # - DeleteLink() launches delete_link_form
+│                             # - ViewLinkDetails() launches view_link_details
+│                             # - ListLinks() uses non-TUI table output
+├── scrape.go                 # Scraping command handlers
+│                             # - HandleScrapeCommand() uses non-TUI output
+│                             # - ScrapeExistingLinkFlow() launches scrape_existing_link_form
+├── users.go                  # User management (non-TUI)
+├── config.go                 # Configuration management (non-TUI)
+├── tui/                      # TUI models and views (Bubble Tea components)
+│   ├── root.go               # Root app shell with menu (launches other flows)
+│   ├── add_link_form.go      # Enhanced add link form with scraping ✅
+│   ├── basic_add_link_form.go # Basic add link form without scraping ✅
+│   ├── delete_link_form.go   # Delete link selector and confirmation ✅
+│   ├── list_links.go         # List links in TUI format ✅
+│   ├── scrape_existing_link_form.go # Scrape and enrich existing link ✅
+│   └── view_link_details.go  # View detailed link information ✅
 └── client/                   # API client (existing)
 ```
+
+### TUI Entry Points
+
+The TUI can be launched in two ways:
+
+1. **Interactive Mode (Root Menu)**: When `app.Run()` is called (no CLI flags), it launches the root model (`tui.NewRootModel`) which presents a menu allowing users to select from multiple flows.
+
+2. **Direct Command Execution**: Individual CLI commands can launch specific TUI forms directly:
+   - `--add` (no URL) → `basic_add_link_form`
+   - `--delete` → `delete_link_form`
+   - `--view-details` (if exists) → `view_link_details`
+   - `--scrape-existing` (if exists) → `scrape_existing_link_form`
+
+### Root Model Architecture
+
+The root model (`tui/root.go`) acts as an app shell that:
+
+- Presents a main menu with numbered options
+- Delegates to child models when a flow is selected
+- Manages shared dependencies (API client, scraper service, timeout)
+- Handles navigation between flows
+
+**Menu Options**:
+
+1. Add link (basic) - `basic_add_link_form`
+2. Add link (with scraping) - `add_link_form`
+3. Delete link - `delete_link_form`
+4. List links - `list_links`
+5. Scrape & enrich existing link - `scrape_existing_link_form`
+6. View link details - `view_link_details`
 
 ### State Machine
 
@@ -174,10 +224,30 @@ pkg/cli/
 
 ## Implementation Details
 
-### Enhanced Add Link Form
+### TUI Components
 
-**File**: `pkg/cli/tui/add_link_form.go` (new Bubble Tea model)
-**Wiring**: `pkg/cli/app.go` (`App.Run` creates `NewAddLinkForm` with API client, scraper service, and timeout)
+#### Root Model (`tui/root.go`)
+
+The root model serves as the app shell for interactive mode. It:
+
+- Displays a menu of available actions
+- Launches child models when options are selected
+- Manages shared dependencies (client, scraper service, timeout)
+- Delegates message handling to active child models
+
+**Wiring**: `pkg/cli/app.go` (`App.Run` creates `NewRootModel` with API client, scraper service, and timeout)
+
+#### Enhanced Add Link Form (`tui/add_link_form.go`)
+
+**File**: `pkg/cli/tui/add_link_form.go` ✅ Implemented
+
+**Wiring**:
+
+- Can be launched from root menu (option 2)
+- Can be launched directly: `tui.NewAddLinkForm(client, scraperService, timeout)`
+- Used in: `tui/root.go` (option 2)
+
+This is the main form with full scraping integration.
 
 #### State Management
 
@@ -486,28 +556,83 @@ The form needs additional fields to track scraping state:
 
 ### Scraper Service Integration
 
+**Location**: `pkg/cli/app.go`
+
 ```go
-// In NewApp or getScraperService
+// getScraperService returns the scraper service, creating it if necessary
 func (a *App) getScraperService() (*scraper.ScraperService, error) {
-    if a.scraperService == nil {
-        if a.cfg.CLI.BaseURL == "" {
-            return nil, fmt.Errorf("base URL not configured")
-        }
-        a.scraperService = scraper.NewScraperService(a.cfg.CLI.BaseURL)
+    if a.scraperService != nil {
+        return a.scraperService, nil
     }
+    if a.cfg.CLI.BaseURL == "" {
+        return nil, fmt.Errorf("base URL not configured (set cli.base_url)")
+    }
+    // Use same base URL as API (nginx routes /scrape to scraper service)
+    a.scraperService = scraper.NewScraperService(a.cfg.CLI.BaseURL)
     return a.scraperService, nil
 }
+```
 
-// In newAddLinkForm
-func newAddLinkForm(client *client.Client, scraperService *scraper.ScraperService) *addLinkForm {
-    // ... existing initialization ...
-    return &addLinkForm{
-        // ... existing fields ...
-        scraperService: scraperService,
-        scraping:        false,
-        skipScraping:   false,
-        currentField:   0,
+### TUI Model Creation
+
+**Root Model** (`pkg/cli/app.go`):
+
+```go
+func (a *App) Run() error {
+    apiClient, err := a.getClient()
+    if err != nil {
+        return err
     }
+    scraperService, err := a.getScraperService()
+    if err != nil {
+        return err
+    }
+    // Launch root model for interactive mode
+    model := tui.NewRootModel(apiClient, scraperService, a.cfg.CLI.ScrapeTimeout)
+    p := tea.NewProgram(model)
+    _, err = p.Run()
+    return err
+}
+```
+
+**Direct Form Launch** (`pkg/cli/links.go`):
+
+```go
+// AddLink launches basic form when no URL provided
+func (a *App) AddLink(url string) error {
+    apiClient, err := a.getClient()
+    if err != nil {
+        return err
+    }
+    if url == "" {
+        // Launch basic TUI form
+        form := tui.NewBasicAddLinkForm(apiClient)
+        p := tea.NewProgram(form)
+        if _, err := p.Run(); err != nil {
+            return fmt.Errorf("error running form: %w", err)
+        }
+        return nil
+    }
+    // ... non-TUI path for URL provided ...
+}
+```
+
+**Scrape Existing Link** (`pkg/cli/scrape.go`):
+
+```go
+func (a *App) ScrapeExistingLinkFlow() error {
+    apiClient, err := a.getClient()
+    if err != nil {
+        return err
+    }
+    scraperService, err := a.getScraperService()
+    if err != nil {
+        return err
+    }
+    model := tui.NewScrapeExistingLinkForm(apiClient, scraperService, a.cfg.CLI.ScrapeTimeout)
+    p := tea.NewProgram(model)
+    _, err = p.Run()
+    return err
 }
 ```
 
@@ -713,11 +838,15 @@ The scraper client has been refactored to support better TUI integration. The fo
 
 The high-priority refactorings (Context Support, Structured Error Types, Progress Callbacks) are complete and the scraper client is ready for TUI integration.
 
-### Phase 1: Basic Integration ✅ (Foundation Exists)
+### Phase 1: Basic Integration ✅ COMPLETE
 
-- [x] Existing `addLinkForm` structure
+- [x] Root model app shell (`tui/root.go`) with menu system
+- [x] Basic add link form (`tui/basic_add_link_form.go`) without scraping
+- [x] Enhanced add link form (`tui/add_link_form.go`) with scraping
 - [x] Basic field inputs (URL, Title, Description, Text)
 - [x] Form submission to API
+- [x] Multiple TUI flows (delete, list, view details, scrape existing)
+- [x] Integration with CLI commands (`pkg/cli/links.go`, `pkg/cli/scrape.go`)
 
 ### Phase 2: Scraping Integration ✅ COMPLETE
 
@@ -809,9 +938,52 @@ The high-priority refactorings (Context Support, Structured Error Types, Progres
 ---
 
 **Last Updated**: 2025-01-XX – Phase 2 and Phase 3 complete; Phase 4 UX polish remaining
-**Next Steps**:
+
+## Current Implementation Status
+
+### TUI Components Implemented ✅
+
+1. **Root Model** (`tui/root.go`) - App shell with menu system
+2. **Add Link Form (Enhanced)** (`tui/add_link_form.go`) - Full scraping integration
+3. **Add Link Form (Basic)** (`tui/basic_add_link_form.go`) - Manual entry only
+4. **Delete Link Form** (`tui/delete_link_form.go`) - Link selector and confirmation
+5. **List Links** (`tui/list_links.go`) - TUI listing view
+6. **View Link Details** (`tui/view_link_details.go`) - Link details viewer
+7. **Scrape Existing Link** (`tui/scrape_existing_link_form.go`) - Enrich existing links
+
+### CLI Integration ✅
+
+- **Interactive Mode**: `app.Run()` launches root menu
+- **Direct Commands**: Individual commands can launch specific TUI forms:
+    - `--add` (no URL) → `basic_add_link_form`
+    - `--delete` → `delete_link_form`
+    - `--view-details` → `view_link_details`
+    - Scrape existing link flow available via root menu
+
+### TUI Usage Outside `tui/` Directory
+
+TUI components are instantiated and launched from the CLI layer:
+
+1. **`pkg/cli/app.go`**:
+   - `App.Run()` - Creates and runs root TUI model for interactive mode
+   - `App.getClient()` and `App.getScraperService()` - Provide dependencies to TUI models
+
+2. **`pkg/cli/links.go`**:
+   - `App.AddLink()` - Launches `basic_add_link_form` when no URL provided
+   - `App.DeleteLink()` - Launches `delete_link_form` TUI
+   - `App.ViewLinkDetails()` - Launches `view_link_details` TUI
+   - Uses `tea.NewProgram()` to run TUI models
+
+3. **`pkg/cli/scrape.go`**:
+   - `App.ScrapeExistingLinkFlow()` - Launches `scrape_existing_link_form` TUI
+   - Uses `tea.NewProgram()` to run TUI model
+
+**Pattern**: CLI command handlers create TUI models with required dependencies (client, scraper service, config) and launch them using `tea.NewProgram()`.
+
+### Next Steps
 
 1. ✅ Phase 0: Scraper client refactorings complete (context support, error types, progress callbacks)
-2. ✅ Phase 2: Implement scraping integration in TUI using refactored client (complete - progress callbacks wired)
-3. ✅ Phase 3: Wire structured `ScraperError` messages and progress callbacks into the UI; add duration to success view (complete)
-4. Phase 4: Polish UX (help text, retry suggestions, animations) and complete testing per the Testing Strategy
+2. ✅ Phase 1: Basic TUI infrastructure complete (root model, multiple forms, CLI integration)
+3. ✅ Phase 2: Implement scraping integration in TUI using refactored client (complete - progress callbacks wired)
+4. ✅ Phase 3: Wire structured `ScraperError` messages and progress callbacks into the UI; add duration to success view (complete)
+5. Phase 4: Polish UX (help text, retry suggestions, animations) and complete testing per the Testing Strategy

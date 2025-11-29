@@ -9,7 +9,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // deleteLinkForm is a Bubble Tea model for selecting a link to delete, migrated from the old forms package.
@@ -81,20 +80,14 @@ func (m *deleteLinkForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.step {
 		case 0:
 			// Selection step
-			switch msg.String() {
-			case "ctrl+c", "esc":
+			if handleQuitKeys(msg.String()) {
 				return m, tea.Quit
-			case "up", "k":
-				if m.selected > 0 {
-					m.selected--
-				}
+			}
+			if newSelected, handled := handleListNavigation(msg.String(), m.selected, len(m.links)); handled {
+				m.selected = newSelected
 				return m, nil
-			case "down", "j":
-				if m.selected < len(m.links)-1 {
-					m.selected++
-				}
-				return m, nil
-			case "enter":
+			}
+			if msg.String() == "enter" {
 				if m.selected < len(m.links) {
 					m.step = 1
 					m.confirm.Focus()
@@ -137,60 +130,37 @@ func (m *deleteLinkForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *deleteLinkForm) View() string {
 	if m.err != nil {
-		return fmt.Sprintf("\n❌ Error: %v\n\nPress any key to exit...", m.err)
+		return renderErrorView(m.err)
 	}
 
 	switch m.step {
 	case 2:
-		return "\n✓ Link deleted successfully!\n\nPress any key to exit..."
+		return renderSuccessView("Link deleted successfully!")
 	case 0:
 		// Selection view
-		var s strings.Builder
-		s.WriteString("\nSelect a link to delete:\n\n")
-		for i, link := range m.links {
-			marker := " "
-			if i == m.selected {
-				marker = "→"
-			}
-
-			title := ""
-			if link.Title != nil && *link.Title != "" {
-				title = *link.Title
-			} else {
-				title = "(no title)"
-			}
-
-			url := link.URL
-			if len(url) > 50 {
-				url = url[:47] + "..."
-			}
-
-			style := lipgloss.NewStyle()
-			if i == m.selected {
-				style = style.Bold(true)
-			}
-
-			s.WriteString(fmt.Sprintf("%s %s - %s\n", marker, style.Render(title), url))
-		}
-		s.WriteString("\n(Use ↑/↓ or j/k to navigate, Enter to select, Esc to cancel)")
-		return s.String()
+		s := renderLinkList(m.links, m.selected, "Delete Link", "Select a link to delete:")
+		s += helpStyle.Render("(Use ↑/↓ or j/k to navigate, Enter to select, Esc to cancel)")
+		return s
 	case 1:
 		// Confirmation view
 		var s strings.Builder
-		s.WriteString("\nSelect a link to delete:\n\n")
-		link := m.links[m.selected]
-		title := ""
-		if link.Title != nil && *link.Title != "" {
-			title = *link.Title
-		} else {
-			title = "(no title)"
-		}
+		s.WriteString(renderTitle("Delete Link"))
+		s.WriteString(warningStyle.Render("⚠️  Confirm Deletion") + "\n\n")
 
-		s.WriteString(fmt.Sprintf("Are you sure you want to delete \"%s\"?\n", title))
-		s.WriteString(fmt.Sprintf("URL: %s\n\n", link.URL))
-		s.WriteString("Confirm (y/N): ")
+		link := m.links[m.selected]
+		title := formatLinkTitle(link)
+
+		s.WriteString(boldStyle.Render("Are you sure you want to delete:"))
+		s.WriteString("\n")
+		s.WriteString(fmt.Sprintf("  %s\n", linkTitleStyle.Render(title)))
+		s.WriteString(fieldLabelStyle.Render("URL:"))
+		s.WriteString(fmt.Sprintf(" %s\n\n", link.URL))
+
+		s.WriteString(boldStyle.Render("Confirm (y/N):"))
+		s.WriteString(" ")
 		s.WriteString(m.confirm.View())
-		s.WriteString("\n\n(Press Enter to confirm, Esc to cancel)")
+		s.WriteString("\n\n")
+		s.WriteString(helpStyle.Render("(Press Enter to confirm, Esc to cancel)"))
 		return s.String()
 	}
 

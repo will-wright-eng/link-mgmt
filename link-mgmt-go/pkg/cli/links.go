@@ -3,8 +3,8 @@ package cli
 import (
 	"fmt"
 	"os"
-	"text/tabwriter"
 
+	linkformatter "link-mgmt-go/pkg/cli/links"
 	"link-mgmt-go/pkg/cli/tui"
 	"link-mgmt-go/pkg/models"
 	"link-mgmt-go/pkg/utils"
@@ -15,53 +15,19 @@ import (
 func (a *App) ListLinks() {
 	apiClient, err := a.getClient()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		linkformatter.WriteToStderr(linkformatter.FormatErrorMessage(err))
 		os.Exit(1)
 	}
 
 	links, err := apiClient.ListLinks()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error fetching links: %v\n", err)
+		linkformatter.WriteToStderr(linkformatter.FormatErrorMessage(fmt.Errorf("fetching links: %w", err)))
 		os.Exit(1)
 	}
 
-	if len(links) == 0 {
-		fmt.Println("No links found.")
-		return
-	}
-
-	// Display links in a table format
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "ID\tURL\tTitle\tCreated")
-	fmt.Fprintln(w, "───\t───\t───\t───")
-
-	for _, link := range links {
-		title := ""
-		if link.Title != nil && *link.Title != "" {
-			title = *link.Title
-		} else {
-			title = "(no title)"
-		}
-
-		// Truncate URL if too long
-		url := link.URL
-		if len(url) > 50 {
-			url = url[:47] + "..."
-		}
-
-		// Format date
-		created := link.CreatedAt.Format("2006-01-02 15:04")
-
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-			link.ID.String()[:8]+"...",
-			url,
-			title,
-			created,
-		)
-	}
-
-	w.Flush()
-	fmt.Printf("\nTotal: %d link(s)\n", len(links))
+	// Display links in a polished table format
+	output := linkformatter.FormatTableOutput(links)
+	linkformatter.WriteToStdout(output)
 }
 
 // AddLink creates a new link with the provided URL
@@ -98,17 +64,9 @@ func (a *App) AddLink(url string) error {
 		return fmt.Errorf("failed to create link: %w", err)
 	}
 
-	// Print success message
-	title := "(no title)"
-	if created.Title != nil && *created.Title != "" {
-		title = *created.Title
-	}
-
-	fmt.Printf("✓ Link created successfully!\n\n")
-	fmt.Printf("  ID:    %s\n", created.ID.String()[:8]+"...")
-	fmt.Printf("  URL:   %s\n", created.URL)
-	fmt.Printf("  Title: %s\n", title)
-	fmt.Printf("  Created: %s\n", created.CreatedAt.Format("2006-01-02 15:04"))
+	// Print polished success message
+	output := linkformatter.FormatSuccessMessage(created)
+	fmt.Print(output)
 
 	return nil
 }
@@ -117,7 +75,7 @@ func (a *App) AddLink(url string) error {
 func (a *App) DeleteLink() {
 	apiClient, err := a.getClient()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		linkformatter.WriteToStderr(linkformatter.FormatErrorMessage(err))
 		os.Exit(1)
 	}
 
@@ -125,7 +83,7 @@ func (a *App) DeleteLink() {
 	selector := tui.NewDeleteLinkForm(apiClient)
 	p := tea.NewProgram(selector)
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error running selector: %v\n", err)
+		linkformatter.WriteToStderr(linkformatter.FormatErrorMessage(fmt.Errorf("running selector: %w", err)))
 		os.Exit(1)
 	}
 }
@@ -134,7 +92,7 @@ func (a *App) DeleteLink() {
 func (a *App) ViewLinkDetails() {
 	apiClient, err := a.getClient()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		linkformatter.WriteToStderr(linkformatter.FormatErrorMessage(err))
 		os.Exit(1)
 	}
 
@@ -142,7 +100,7 @@ func (a *App) ViewLinkDetails() {
 	viewer := tui.NewViewLinkDetailsModel(apiClient)
 	p := tea.NewProgram(viewer)
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error running viewer: %v\n", err)
+		linkformatter.WriteToStderr(linkformatter.FormatErrorMessage(fmt.Errorf("running viewer: %w", err)))
 		os.Exit(1)
 	}
 }

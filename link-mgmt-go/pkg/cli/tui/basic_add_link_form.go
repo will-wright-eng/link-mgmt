@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"link-mgmt-go/pkg/cli/client"
@@ -126,65 +125,84 @@ func (m *basicAddLinkForm) View() string {
 	case 4:
 		// Success view
 		if m.created != nil {
-			title := ""
-			if m.created.Title != nil && *m.created.Title != "" {
-				title = *m.created.Title
-			} else {
-				title = "(no title)"
-			}
-			return fmt.Sprintf(
-				"\n✓ Link created successfully!\n\n"+
-					"  ID:          %s\n"+
-					"  URL:         %s\n"+
-					"  Title:       %s\n"+
-					"  Created:     %s\n\n"+
-					"Press any key to exit...",
-				m.created.ID.String()[:8]+"...",
-				m.created.URL,
-				title,
-				m.created.CreatedAt.Format("2006-01-02 15:04"),
-			)
+			var b strings.Builder
+			b.WriteString("\n")
+			b.WriteString(renderSuccess("Link created successfully!"))
+			b.WriteString("\n\n")
+			b.WriteString(renderLinkDetails(m.created, false))
+			b.WriteString("\n")
+			b.WriteString(helpStyle.Render("Press any key to exit...") + "\n")
+			return b.String()
 		}
-		return "\n✓ Link created successfully!\n\nPress any key to exit..."
+		return renderSuccessView("Link created successfully!")
 	default:
 		var s strings.Builder
-		s.WriteString("\nAdd New Link\n\n")
+		s.WriteString(renderTitle("Add New Link"))
 
 		switch m.step {
 		case 0:
-			s.WriteString("URL (required):\n")
+			s.WriteString(fieldLabelStyle.Render("URL (required):"))
+			s.WriteString("\n")
 			s.WriteString(m.urlInput.View())
 			if m.err != nil {
-				s.WriteString(fmt.Sprintf("\n\n❌ %s", m.err))
+				s.WriteString("\n\n")
+				s.WriteString(renderInlineError(m.err))
 			}
-			s.WriteString("\n\n(Press Enter to continue, Esc to cancel)")
+			s.WriteString("\n\n")
+			s.WriteString(helpStyle.Render("(Press Enter to continue, Esc to cancel)"))
 		case 1:
-			s.WriteString("✓ URL: " + m.urlInput.Value() + "\n\n")
-			s.WriteString("Title (optional, press Enter to skip):\n")
+			s.WriteString(successStyle.Render("✓"))
+			s.WriteString(" ")
+			s.WriteString(fieldLabelStyle.Render("URL:"))
+			s.WriteString(" " + m.urlInput.Value() + "\n\n")
+			s.WriteString(fieldLabelStyle.Render("Title (optional, press Enter to skip):"))
+			s.WriteString("\n")
 			s.WriteString(m.titleInput.View())
-			s.WriteString("\n\n(Press Enter to continue, Esc to cancel)")
+			s.WriteString("\n\n")
+			s.WriteString(helpStyle.Render("(Press Enter to continue, Esc to cancel)"))
 		case 2:
-			s.WriteString("✓ URL: " + m.urlInput.Value() + "\n")
+			s.WriteString(successStyle.Render("✓"))
+			s.WriteString(" ")
+			s.WriteString(fieldLabelStyle.Render("URL:"))
+			s.WriteString(" " + m.urlInput.Value() + "\n")
 			titleVal := m.titleInput.Value()
 			if titleVal != "" {
-				s.WriteString("✓ Title: " + titleVal + "\n")
+				s.WriteString(successStyle.Render("✓"))
+				s.WriteString(" ")
+				s.WriteString(fieldLabelStyle.Render("Title:"))
+				s.WriteString(" " + titleVal + "\n")
 			}
-			s.WriteString("\nDescription (optional, press Enter to skip):\n")
+			s.WriteString("\n")
+			s.WriteString(fieldLabelStyle.Render("Description (optional, press Enter to skip):"))
+			s.WriteString("\n")
 			s.WriteString(m.descInput.View())
-			s.WriteString("\n\n(Press Enter to continue, Esc to cancel)")
+			s.WriteString("\n\n")
+			s.WriteString(helpStyle.Render("(Press Enter to continue, Esc to cancel)"))
 		case 3:
-			s.WriteString("✓ URL: " + m.urlInput.Value() + "\n")
+			s.WriteString(successStyle.Render("✓"))
+			s.WriteString(" ")
+			s.WriteString(fieldLabelStyle.Render("URL:"))
+			s.WriteString(" " + m.urlInput.Value() + "\n")
 			titleVal := m.titleInput.Value()
 			if titleVal != "" {
-				s.WriteString("✓ Title: " + titleVal + "\n")
+				s.WriteString(successStyle.Render("✓"))
+				s.WriteString(" ")
+				s.WriteString(fieldLabelStyle.Render("Title:"))
+				s.WriteString(" " + titleVal + "\n")
 			}
 			descVal := m.descInput.Value()
 			if descVal != "" {
-				s.WriteString("✓ Description: " + descVal + "\n")
+				s.WriteString(successStyle.Render("✓"))
+				s.WriteString(" ")
+				s.WriteString(fieldLabelStyle.Render("Description:"))
+				s.WriteString(" " + descVal + "\n")
 			}
-			s.WriteString("\nText (optional, press Enter to submit, Esc to cancel):\n")
+			s.WriteString("\n")
+			s.WriteString(fieldLabelStyle.Render("Text (optional, press Enter to submit, Esc to cancel):"))
+			s.WriteString("\n")
 			s.WriteString(m.textInput.View())
-			s.WriteString("\n\n(Press Enter to submit, Esc to cancel)")
+			s.WriteString("\n\n")
+			s.WriteString(helpStyle.Render("(Press Enter to submit, Esc to cancel)"))
 		}
 		return s.String()
 	}
