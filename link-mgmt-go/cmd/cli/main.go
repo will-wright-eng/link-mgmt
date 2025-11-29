@@ -5,18 +5,18 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"link-mgmt-go/pkg/cli"
 	"link-mgmt-go/pkg/config"
+	"link-mgmt-go/pkg/scraper"
+	"link-mgmt-go/pkg/utils"
 )
 
 func main() {
 	var (
-		listMode   = flag.Bool("list", false, "List all links")
-		addURL     = flag.String("add", "", "Add a new link (provide URL)")
-		deleteMode = flag.Bool("delete", false, "Delete a link [interactive mode]")
-		register   = flag.String("register", "", "Register a new user account (provide email)")
-		scrapeURL  = flag.String("scrape", "", "Scrape a URL to extract title and text content")
+		register  = flag.String("register", "", "Register a new user account (provide email)")
+		scrapeURL = flag.String("scrape", "", "Scrape a URL to extract title and text content")
 
 		// Config commands
 		configShow = flag.Bool("config-show", false, "Show current configuration")
@@ -60,39 +60,88 @@ func main() {
 		if cfg.CLI.BaseURL == "" {
 			log.Fatalf("Base URL not configured. Set it with: --config-set cli.base_url=<url>")
 		}
-		if err := app.HandleScrapeCommand(*scrapeURL); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+
+		// Validate URL format
+		urlStr, err := utils.ValidateURL(*scrapeURL)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: invalid URL: %v\n", err)
 			os.Exit(1)
 		}
-		return
-	}
 
-	// For operations that need API connection
-	if *listMode || *addURL != "" || *deleteMode {
-		// Validate API configuration
-		if cfg.CLI.BaseURL == "" {
-			log.Fatalf("Base URL not configured. Set it with: --config-set cli.base_url=<url>")
-		}
-		if cfg.CLI.APIKey == "" {
-			log.Fatalf("API key not configured.\n\nTo get started:\n  1. Register a new account: --register <email>\n  2. Or set API key manually: --config-set cli.api_key=<key>")
-		}
+		// Get scraper service
+		scraperService := scraper.NewScraperService(cfg.CLI.BaseURL)
 
-		if *listMode {
-			app.ListLinks()
-		} else if *addURL != "" {
-			if err := app.AddLink(*addURL); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
+		// Check health first
+		fmt.Print("⏳ Checking scraper service... ")
+		if err := scraperService.CheckHealth(); err != nil {
+			fmt.Println("✗")
+
+			// Provide helpful guidance for connection errors
+			errStr := err.Error()
+			if strings.Contains(errStr, "connection refused") || strings.Contains(errStr, "dial tcp") {
+				log.Fatalf("scraper service unavailable: %v\n\n"+
+					"💡 The services are not running. To start them:\n"+
+					"   From project root: make dev-upd\n"+
+					"   Or: docker compose --profile dev up -d --build\n\n"+
+					"This will start:\n"+
+					"  - Nginx reverse proxy (port 80)\n"+
+					"  - API service (api-dev)\n"+
+					"  - Scraper service (scraper-dev)\n"+
+					"  - PostgreSQL database", err)
 			}
-		} else if *deleteMode {
-			app.DeleteLink()
+
+			log.Fatalf("scraper service unavailable: %v\n\nPlease check if the service is running", err)
+		}
+		fmt.Println("✓")
+
+		// Scrape the URL
+		fmt.Printf("⏳ Scraping URL... (this may take a few seconds)\n")
+		timeout := cfg.CLI.ScrapeTimeout
+		if timeout <= 0 {
+			timeout = 30
+		}
+		result, err := scraperService.Scrape(urlStr, timeout*1000) // timeout in ms
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: scraping failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		if !result.Success {
+			fmt.Fprintf(os.Stderr, "Error: scraping failed: %s\n", result.Error)
+			os.Exit(1)
+		}
+
+		// Display results
+		fmt.Println("\n✓ Scraping successful!")
+		fmt.Printf("\nURL: %s\n", result.URL)
+		if result.Title != "" {
+			fmt.Printf("Title: %s\n", result.Title)
+		} else {
+			fmt.Println("Title: (no title)")
+		}
+		if result.Text != "" {
+			truncated := truncateText(result.Text, 500)
+			fmt.Printf("Text: %s\n", truncated)
+			if len(result.Text) > 500 {
+				fmt.Printf("\n(Text truncated, full length: %d characters)\n", len(result.Text))
+			}
+		} else {
+			fmt.Println("Text: (no text content)")
 		}
 		return
 	}
 
-	// Interactive TUI mode (will use API client when implemented)
+	// Interactive TUI mode
 	if err := app.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// truncateText truncates text to a maximum length, adding ellipsis if truncated
+func truncateText(text string, maxLen int) string {
+	if len(text) <= maxLen {
+		return text
+	}
+	return text[:maxLen] + "..."
 }

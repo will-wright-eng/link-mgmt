@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"link-mgmt-go/pkg/models"
+	"link-mgmt-go/pkg/scraper"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -280,4 +282,19 @@ func renderInlineError(err error) string {
 // renderInlineWarning renders a warning message inline (without full warning view formatting)
 func renderInlineWarning(message string) string {
 	return renderWarning(message)
+}
+
+// userFacingError converts structured scraper errors into friendly messages,
+// while leaving other error types unchanged.
+func userFacingError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var scraperErr *scraper.ScraperError
+	if errors.As(err, &scraperErr) {
+		return errors.New(scraperErr.UserMessage())
+	}
+
+	return err
 }

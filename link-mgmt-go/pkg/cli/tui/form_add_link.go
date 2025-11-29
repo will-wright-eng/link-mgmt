@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -197,7 +196,7 @@ func (m *addLinkForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case scrapeErrorMsg:
 		m.scraping = false
-		m.scrapeError = m.userFacingError(msg.err)
+		m.scrapeError = userFacingError(msg.err)
 		m.scrapeDuration = time.Since(m.scrapeStartTime)
 		// Move to review step even if scraping failed.
 		m.step = stepReview
@@ -206,7 +205,7 @@ func (m *addLinkForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 
 	case submitErrorMsg:
-		m.err = m.userFacingError(msg.err)
+		m.err = userFacingError(msg.err)
 		m.step = stepReview
 		return m, nil
 
@@ -323,21 +322,6 @@ func (m *addLinkForm) focusCurrentField() {
 	case 3:
 		m.textInput.Focus()
 	}
-}
-
-// userFacingError converts structured scraper errors into friendly messages,
-// while leaving other error types unchanged.
-func (m *addLinkForm) userFacingError(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	var scraperErr *scraper.ScraperError
-	if errors.As(err, &scraperErr) {
-		return errors.New(scraperErr.UserMessage())
-	}
-
-	return err
 }
 
 // startScraping kicks off the asynchronous scraping command.

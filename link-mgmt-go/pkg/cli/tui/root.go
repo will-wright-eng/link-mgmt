@@ -82,24 +82,8 @@ func (m *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "4":
-			// List links flow (read-only listing in TUI).
-			m.current = NewListLinksModel(m.client)
-			if initer, ok := m.current.(interface{ Init() tea.Cmd }); ok {
-				return m, initer.Init()
-			}
-			return m, nil
-
-		case "5":
-			// Scrape & enrich an existing link.
-			m.current = NewScrapeExistingLinkForm(m.client, m.scraperService, m.scrapeTimeout)
-			if initer, ok := m.current.(interface{ Init() tea.Cmd }); ok {
-				return m, initer.Init()
-			}
-			return m, nil
-
-		case "6":
-			// View link details (list and show all fields).
-			m.current = NewViewLinkDetailsModel(m.client)
+			// Combined manage links flow (list, view, delete, scrape).
+			m.current = NewManageLinksModel(m.client, m.scraperService, m.scrapeTimeout)
 			if initer, ok := m.current.(interface{ Init() tea.Cmd }); ok {
 				return m, initer.Init()
 			}
@@ -125,9 +109,7 @@ func (m *rootModel) View() string {
 	b.WriteString("  " + selectedMarkerStyle.Render("1)") + " Add link (basic)\n")
 	b.WriteString("  " + selectedMarkerStyle.Render("2)") + " Add link (with scraping)\n")
 	b.WriteString("  " + selectedMarkerStyle.Render("3)") + " Delete link\n")
-	b.WriteString("  " + selectedMarkerStyle.Render("4)") + " List links\n")
-	b.WriteString("  " + selectedMarkerStyle.Render("5)") + " Scrape & enrich existing link\n")
-	b.WriteString("  " + selectedMarkerStyle.Render("6)") + " View link details\n")
+	b.WriteString("  " + selectedMarkerStyle.Render("4)") + " Manage links (list, view, delete, scrape)\n")
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("Press the number of an option, or 'q' / Esc to quit.") + "\n")
 
