@@ -131,6 +131,13 @@ scrape_timeout = 30            # Scraping timeout in seconds
 url = "postgres://link_mgmt_user:link_mgmt_pwd@localhost:5432/link_mgmt_db?sslmode=disable"
 ```
 
+Run the following command to register a CLI user and start saving links:
+
+```bash
+cd link-mgmt-go
+go run ./cmd/cli --register "me@$(whoami).com"
+```
+
 ### Run Database Migrations
 
 ```bash
