@@ -16,6 +16,7 @@ func main() {
 		addMode    = flag.Bool("add", false, "Add a new link")
 		deleteMode = flag.Bool("delete", false, "Delete a link")
 		register   = flag.String("register", "", "Register a new user account (provide email)")
+		scrapeURL  = flag.String("scrape", "", "Scrape a URL to extract title and text content")
 
 		// Config commands
 		configShow = flag.Bool("config-show", false, "Show current configuration")
@@ -50,6 +51,18 @@ func main() {
 		}
 		if err := app.RegisterUser(*register); err != nil {
 			log.Fatalf("failed to register user: %v", err)
+		}
+		return
+	}
+
+	// Handle scrape command (needs base URL but not API key)
+	if *scrapeURL != "" {
+		if cfg.CLI.BaseURL == "" {
+			log.Fatalf("Base URL not configured. Set it with: --config-set cli.base_url=<url>")
+		}
+		if err := app.HandleScrapeCommand(*scrapeURL); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
 		}
 		return
 	}

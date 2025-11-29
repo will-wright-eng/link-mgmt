@@ -91,9 +91,11 @@ go run ./cmd/cli
 
 - `--config-show` - Show current configuration (no database connection required)
 - `--config-set <section.key=value>` - Set a config value (no database connection required)
-- `--list` - List all links (requires database)
-- `--add` - Add a new link (requires database)
-- `--delete` - Delete a link (requires database)
+- `--register <email>` - Register a new user account (requires base URL, saves API key automatically)
+- `--scrape <url>` - Scrape a URL to extract title and text content (requires scraper service)
+- `--list` - List all links (requires database and API key)
+- `--add` - Add a new link (requires database and API key)
+- `--delete` - Delete a link (requires database and API key)
 
 ## API Endpoints
 
@@ -132,3 +134,33 @@ scrape_timeout = 30
 ```
 
 **Note:** The default config matches the docker-compose.yml PostgreSQL settings. You can manage the config file using the CLI commands above without requiring a database connection.
+
+## Scraping URLs
+
+The CLI includes a separate `--scrape` command to extract content from URLs independently:
+
+```bash
+# Scrape a URL (requires scraper service to be running)
+./bin/cli --scrape https://example.com/article
+```
+
+**Prerequisites:**
+
+- Scraper service must be running (via docker-compose)
+- Base URL must be configured (default: `http://localhost`)
+
+**To start services:**
+
+```bash
+# From project root
+make dev-upd
+# Or: docker compose --profile dev up -d --build
+```
+
+The scrape command will:
+
+1. Check scraper service health
+2. Extract title and text content from the URL
+3. Display results (text truncated to 500 chars for readability)
+
+**Note:** The `--scrape` command is independent from `--add`. You can scrape URLs separately and manually copy the results when adding links.
