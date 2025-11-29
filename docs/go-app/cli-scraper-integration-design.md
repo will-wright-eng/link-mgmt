@@ -8,7 +8,7 @@ This document details the integration of the scraper service into the Go CLI app
 
 **Timeline**: 1-2 days
 **Complexity**: Medium
-**Status**: ❌ **Not Implemented** - Design phase
+**Status**: 🟡 **In Progress** - Configuration complete, form integration pending
 
 **Prerequisites**:
 
@@ -16,6 +16,8 @@ This document details the integration of the scraper service into the Go CLI app
 - ✅ Go scraper client implemented (`link-mgmt-go/pkg/scraper/client.go`)
 - ✅ CLI add link form implemented (`link-mgmt-go/pkg/cli/app.go`)
 - ✅ API client implemented (`link-mgmt-go/pkg/cli/client/`)
+- ✅ Nginx reverse proxy configured (`nginx/nginx.conf`, `docker-compose.yml`)
+- ✅ Configuration updated with `BaseURL` and `ScrapeTimeout` (`pkg/config/config.go`)
 
 ---
 
@@ -34,10 +36,10 @@ Text
 ### Desired Flow (With Scraping)
 
 ```
-User Input → CLI Form → Scraper Service → CLI Processing → API Client → API Server → Database
-   ↓           ↓              ↓                  ↓               ↓
-URL only   Scrape Request   ScrapeResponse   Enrich Link     LinkCreate
-                                                              JSON
+User Input → CLI Form → Nginx → Scraper Service → CLI Processing → Nginx → API Client → API Server → Database
+   ↓           ↓         ↓            ↓                  ↓            ↓          ↓
+URL only   Scrape    /scrape      ScrapeResponse   Enrich Link   /api/v1   LinkCreate
+           Request   endpoint                                    /links     JSON
 ```
 
 ---
@@ -103,7 +105,16 @@ URL only   Scrape Request   ScrapeResponse   Enrich Link     LinkCreate
 │  - Scrape(url, timeout)             │
 └──────┬──────────────────────────────┘
        │
-       │ [HTTP POST /scrape]
+       │ [HTTP POST http://localhost/scrape]
+       ▼
+┌─────────────────────────────────────┐
+│  Nginx Reverse Proxy                │
+│  (nginx/nginx.conf)                 │
+│  - Routes /scrape → scraper service │
+│  - Routes /scraper/* → scraper      │
+└──────┬──────────────────────────────┘
+       │
+       │ [HTTP POST http://scraper-dev:3000/scrape]
        ▼
 ┌─────────────────────────────────────┐
 │  Scraper Service                    │
@@ -139,7 +150,15 @@ URL only   Scrape Request   ScrapeResponse   Enrich Link     LinkCreate
 │  - CreateLink(LinkCreate)           │
 └──────┬──────────────────────────────┘
        │
-       │ [HTTP POST /api/v1/links]
+       │ [HTTP POST http://localhost/api/v1/links]
+       ▼
+┌─────────────────────────────────────┐
+│  Nginx Reverse Proxy                │
+│  (nginx/nginx.conf)                 │
+│  - Routes /api/* → API service      │
+└──────┬──────────────────────────────┘
+       │
+       │ [HTTP POST http://api-dev:8080/api/v1/links]
        ▼
 ┌─────────────────────────────────────┐
 │  API Server                         │
@@ -157,48 +176,38 @@ URL only   Scrape Request   ScrapeResponse   Enrich Link     LinkCreate
 
 ---
 
-## Configuration Changes
+## Configuration
 
 ### Current Config Structure
 
-```go
-// pkg/config/config.go
-type Config struct {
-    CLI struct {
-        APIBaseURL string `toml:"api_base_url"`
-        APIKey     string `toml:"api_key"`
-    } `toml:"cli"`
-}
-```
-
-### Required Changes
-
-With nginx reverse proxy, we can simplify configuration to use a single base URL:
+✅ **Already Implemented**: The configuration has been updated to support nginx reverse proxy:
 
 ```go
 // pkg/config/config.go
 type Config struct {
     CLI struct {
-        BaseURL     string `toml:"base_url"`      // Single base URL for all services
-        APIKey      string `toml:"api_key"`
-        ScrapeTimeout int  `toml:"scrape_timeout"` // NEW (seconds, default: 30)
+        BaseURL       string `toml:"base_url"`       // Single base URL for all services (via nginx)
+        APIKey        string `toml:"api_key"`
+        ScrapeTimeout int    `toml:"scrape_timeout"` // Timeout for scraping operations in seconds
     } `toml:"cli"`
 }
 ```
 
-**Note**: The CLI will construct URLs as:
+**Note**: The CLI constructs URLs as:
 
-- API: `{base_url}/api/v1/*`
-- Scraper: `{base_url}/scraper/*` or `{base_url}/scrape`
+- API: `{base_url}/api/v1/*` → nginx routes to `api-dev:8080`
+- Scraper: `{base_url}/scrape` → nginx routes to `scraper-dev:3000`
+- Scraper Health: `{base_url}/scraper/health` → nginx routes to `scraper-dev:3000/health`
 
 ### Default Values
+
+✅ **Already Implemented**: Default configuration:
 
 ```go
 func DefaultConfig() *Config {
     cfg := &Config{}
-    // ... existing defaults ...
     cfg.CLI.BaseURL = "http://localhost"  // nginx reverse proxy on port 80
-    cfg.CLI.ScrapeTimeout = 30  // 30 seconds default
+    cfg.CLI.ScrapeTimeout = 30            // 30 seconds default
     return cfg
 }
 ```
@@ -212,13 +221,45 @@ api_key = "your-api-key-here"
 scrape_timeout = 30
 ```
 
-### Migration from Old Config
+### Nginx Routing Structure
 
-If you have an existing config with `api_base_url` and `scraper_service_url`, the CLI can:
+The nginx reverse proxy (`nginx/nginx.conf`) routes requests as follows:
 
-1. Read the old config format
-2. Automatically migrate to the new `base_url` format
-3. Or maintain backward compatibility by deriving `base_url` from `api_base_url` if `scraper_service_url` matches the same host
+- **API Routes**:
+    - `/api/*` → `http://api-dev:8080/api/*` (or `http://api:8080` in production)
+    - `/health` → `http://api-dev:8080/health`
+
+- **Scraper Routes**:
+    - `/scrape` → `http://scraper-dev:3000/scrape` (direct mapping)
+    - `/scraper/*` → `http://scraper-dev:3000/*` (prefix stripped via rewrite)
+    - `/scraper/health` → `http://scraper-dev:3000/health`
+
+All services are accessed through nginx on port 80, which simplifies CLI configuration to a single `base_url`.
+
+### Docker Compose Setup
+
+The `docker-compose.yml` orchestrates all services with the following structure:
+
+**Services (dev profile)**:
+
+- **nginx**: Reverse proxy container (port 80 exposed to host)
+- **api-dev**: Go API service (port 8080, internal only)
+- **scraper-dev**: Bun scraper service (port 3000, internal only)
+- **postgres**: PostgreSQL database (port 5432 exposed to host)
+
+**Key Features**:
+
+- All services communicate via Docker networking (service names as hostnames)
+- Nginx depends on `api-dev` and `scraper-dev` services
+- Health checks configured for all services
+- Volume mounts for hot-reloading in development
+- Services use `profiles: [dev]` for development environment
+
+**CLI Access**:
+
+- CLI runs on host machine (not in Docker)
+- Accesses services via `http://localhost` (nginx on port 80)
+- No need to know internal service ports or hostnames
 
 ---
 
@@ -275,17 +316,16 @@ If you have an existing config with `api_base_url` and `scraper_service_url`, th
 
 ## Implementation Details
 
-### 1. Update Configuration
+### 1. Configuration ✅ COMPLETE
 
 **File**: `link-mgmt-go/pkg/config/config.go`
 
-**Changes**:
+**Status**: ✅ Already implemented
 
-- Replace `APIBaseURL` with `BaseURL` (single URL for all services via nginx)
-- Add `ScrapeTimeout` field to `CLI` struct
-- Update `DefaultConfig()` with defaults (base_url = "<http://localhost>")
-- Update `SetConfig()` to handle new keys (e.g., `cli.base_url`)
-- Maintain backward compatibility: if `api_base_url` exists, derive `base_url` from it
+- ✅ `BaseURL` field exists in `CLI` struct (replaces `APIBaseURL`)
+- ✅ `ScrapeTimeout` field exists in `CLI` struct
+- ✅ `DefaultConfig()` sets defaults (`base_url = "http://localhost"`, `scrape_timeout = 30`)
+- ✅ Config loading and saving implemented
 
 ### 2. Update CLI App Structure
 
@@ -315,7 +355,7 @@ func (a *App) getScraperService() *scraper.ScraperService {
 }
 ```
 
-**Note**: The scraper client will need to be updated to use `/scraper/` prefix for paths when using nginx, or nginx can be configured to strip the prefix. For simplicity, we'll use `/scrape` endpoint directly (nginx routes this to scraper service).
+**Note**: ✅ The scraper client (`pkg/scraper/client.go`) already uses the `/scrape` endpoint, which nginx routes correctly to the scraper service. Health checks use `/scraper/health` with fallback to `/health`.
 
 ### 3. Enhance Add Link Form
 
@@ -364,7 +404,8 @@ func (m *addLinkForm) scrapeURL(url string) tea.Cmd {
         }
 
         // Scrape the URL
-        timeout := 30 // Could come from config
+        // Use timeout from config (already available via cfg.CLI.ScrapeTimeout)
+        timeout := m.cfg.CLI.ScrapeTimeout
         result, err := m.scraperService.Scrape(url, timeout*1000) // timeout in ms
         if err != nil {
             return scrapeErrorMsg{err: err}
@@ -378,6 +419,12 @@ func (m *addLinkForm) scrapeURL(url string) tea.Cmd {
     }
 }
 ```
+
+**Note**: The scraper client (`pkg/scraper/client.go`) is already implemented and:
+
+- ✅ Uses `/scrape` endpoint (routed via nginx)
+- ✅ Has `CheckHealth()` method using `/scraper/health` endpoint
+- ✅ Returns `ScrapeResponse` with `Success`, `Title`, `Text`, `URL`, `Error` fields
 
 ### 5. Message Types
 
@@ -449,19 +496,21 @@ type scrapeErrorMsg struct {
 
 ### File Changes Summary
 
-1. **`pkg/config/config.go`**
-   - Add `ScraperServiceURL` and `ScrapeTimeout` to config struct
-   - Update defaults and config parsing
+1. **`pkg/config/config.go`** ✅ COMPLETE
+   - ✅ `BaseURL` and `ScrapeTimeout` already in config struct
+   - ✅ Defaults and config parsing already implemented
 
-2. **`pkg/cli/app.go`**
-   - Add scraper service initialization
-   - Pass scraper service to add link form
-   - Update `addLinkForm` struct and methods
-   - Add scraping state management
+2. **`pkg/cli/app.go`** ⏳ TODO
+   - ⏳ Add scraper service initialization
+   - ⏳ Pass scraper service to add link form
+   - ⏳ Update `addLinkForm` struct and methods
+   - ⏳ Add scraping state management
 
-3. **No changes needed to**:
-   - `pkg/scraper/client.go` (already implemented)
-   - `pkg/cli/client/` (API client already implemented)
+3. **Already implemented**:
+   - ✅ `pkg/scraper/client.go` - Scraper HTTP client with nginx routing support
+   - ✅ `pkg/cli/client/` - API HTTP client
+   - ✅ `nginx/nginx.conf` - Reverse proxy routing configuration
+   - ✅ `docker-compose.yml` - Service orchestration with nginx
 
 ---
 
@@ -504,20 +553,20 @@ type scrapeErrorMsg struct {
 
 ## Implementation Tasks
 
-### Phase 1: Configuration
+### Phase 1: Configuration ✅ COMPLETE
 
-- [ ] Add `ScraperServiceURL` to config struct
-- [ ] Add `ScrapeTimeout` to config struct
-- [ ] Update `DefaultConfig()` with defaults
-- [ ] Update `SetConfig()` to handle new config keys
-- [ ] Test config loading and saving
+- [x] Add `BaseURL` to config struct (replaces `APIBaseURL`)
+- [x] Add `ScrapeTimeout` to config struct
+- [x] Update `DefaultConfig()` with defaults
+- [x] Config loading and saving implemented
+- [x] Nginx reverse proxy configured and routing working
 
-### Phase 2: Scraper Service Integration
+### Phase 2: Scraper Service Integration ⏳ TODO
 
 - [ ] Add scraper service client to `App` struct
 - [ ] Implement `getScraperService()` method
 - [ ] Add health check on initialization (optional)
-- [ ] Test scraper service connection
+- [ ] Test scraper service connection via nginx
 
 ### Phase 3: Form Enhancement
 
@@ -549,7 +598,8 @@ type scrapeErrorMsg struct {
 ### Functional Requirements
 
 - [x] Scraper service client exists (`pkg/scraper/client.go`)
-- [ ] CLI can configure scraper service URL
+- [x] CLI can configure base URL (via `base_url` in config)
+- [x] Nginx reverse proxy routes requests correctly
 - [ ] CLI automatically scrapes URLs when adding links
 - [ ] Form auto-fills title and text from scraped data
 - [ ] User can edit scraped data before submission
@@ -559,11 +609,11 @@ type scrapeErrorMsg struct {
 
 ### Non-Functional Requirements
 
-- [ ] Scraping timeout is configurable (default: 30 seconds)
+- [x] Scraping timeout is configurable (default: 30 seconds) - `ScrapeTimeout` in config
 - [ ] Scraping doesn't block CLI indefinitely
 - [ ] Error messages are user-friendly
 - [ ] Loading indicators show scraping progress
-- [ ] Configuration can be set via `--config-set`
+- [x] Configuration can be set via config file (`~/.config/link-mgmt/config.toml`)
 
 ### User Experience
 
@@ -597,13 +647,24 @@ type scrapeErrorMsg struct {
 
 ### Existing Dependencies
 
-- ✅ `link-mgmt-go/pkg/scraper/client.go` - Scraper HTTP client
-- ✅ `link-mgmt-go/pkg/cli/client/` - API HTTP client
+- ✅ `link-mgmt-go/pkg/scraper/client.go` - Scraper HTTP client (uses nginx routing)
+- ✅ `link-mgmt-go/pkg/cli/client/` - API HTTP client (uses nginx routing)
+- ✅ `nginx/nginx.conf` - Reverse proxy configuration
+- ✅ `docker-compose.yml` - Service orchestration with nginx
 - ✅ Bubble Tea - TUI framework (already in use)
+
+### Infrastructure
+
+- ✅ **Nginx Reverse Proxy**: Routes all requests through port 80
+    - `/api/*` → API service (api-dev:8080)
+    - `/scrape` → Scraper service (scraper-dev:3000)
+    - `/scraper/*` → Scraper service (scraper-dev:3000)
+- ✅ **Docker Compose**: Orchestrates all services with proper networking
+- ✅ **Health Checks**: Configured for all services
 
 ### No New Dependencies Required
 
-All necessary packages are already available in the codebase.
+All necessary packages and infrastructure are already available in the codebase.
 
 ---
 
@@ -625,5 +686,30 @@ All necessary packages are already available in the codebase.
 
 ---
 
-**Last Updated**: Design phase
-**Next Steps**: Implementation Phase 1 (Configuration)
+**Last Updated**: Updated to reflect nginx reverse proxy architecture
+**Next Steps**: Implementation Phase 2 (Scraper Service Integration) and Phase 3 (Form Enhancement)
+
+## Architecture Notes
+
+### Nginx Reverse Proxy Setup
+
+The system uses nginx as a reverse proxy to simplify service access:
+
+- **Single Entry Point**: All services accessed via `http://localhost` (port 80)
+- **Service Routing**:
+    - API: `http://localhost/api/v1/*` → `api-dev:8080`
+    - Scraper: `http://localhost/scrape` → `scraper-dev:3000`
+    - Scraper (with prefix): `http://localhost/scraper/*` → `scraper-dev:3000/*`
+- **Health Checks**:
+    - `/health` → API health
+    - `/scraper/health` → Scraper health
+- **Timeouts**: Extended timeouts for scraping operations (120s) to handle long-running requests
+
+### Docker Compose Services
+
+- **nginx**: Reverse proxy (port 80)
+- **api-dev**: Go API service (port 8080, exposed internally)
+- **scraper-dev**: Bun scraper service (port 3000, exposed internally)
+- **postgres**: Database (port 5432)
+
+All services run in the `dev` profile and communicate via Docker networking.

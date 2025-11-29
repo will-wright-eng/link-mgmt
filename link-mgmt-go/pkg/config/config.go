@@ -27,6 +27,11 @@ type Config struct {
 		APIKey        string `toml:"api_key"`
 		ScrapeTimeout int    `toml:"scrape_timeout"` // Timeout for scraping operations in seconds
 	} `toml:"cli"`
+
+	// Scraper
+	Scraper struct {
+		BaseURL string `toml:"base_url"` // Base URL for scraper service
+	} `toml:"scraper"`
 }
 
 // DefaultConfig returns a config with default values
@@ -38,7 +43,8 @@ func DefaultConfig() *Config {
 	cfg.API.Host = "0.0.0.0"
 	cfg.CLI.BaseURL = "http://localhost" // nginx reverse proxy on port 80
 	cfg.CLI.APIKey = ""
-	cfg.CLI.ScrapeTimeout = 30 // 30 seconds default
+	cfg.CLI.ScrapeTimeout = 30               // 30 seconds default
+	cfg.Scraper.BaseURL = "http://localhost" // scraper service default
 	return cfg
 }
 
@@ -121,6 +127,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.CLI.BaseURL == "" {
 		cfg.CLI.BaseURL = defaultCfg.CLI.BaseURL
+	}
+	if cfg.Scraper.BaseURL == "" {
+		cfg.Scraper.BaseURL = defaultCfg.Scraper.BaseURL
 	}
 
 	// Override with environment variables if set (useful for Docker)

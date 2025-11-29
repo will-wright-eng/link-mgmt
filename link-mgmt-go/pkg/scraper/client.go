@@ -15,10 +15,6 @@ type ScraperService struct {
 }
 
 func NewScraperService(baseURL string) *ScraperService {
-	if baseURL == "" {
-		baseURL = "http://localhost:3000"
-	}
-
 	return &ScraperService{
 		baseURL: baseURL,
 		client: &http.Client{
