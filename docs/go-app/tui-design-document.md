@@ -66,14 +66,14 @@ This document outlines the design for an interactive Terminal User Interface (TU
 ┌─────────────────────────────────────────────────────────────┐
 │ Step 4: Success                                              │
 │ ─────────────────────────────────────────────────────────── │
-│ ✓ Link created successfully!                                 │
-│                                                               │
-│   ID:          a1b2c3d4...                                   │
+│ ✓ Link created successfully!                                │
+│                                                             │
+│   ID:          a1b2c3d4...                                  │
 │   URL:         https://example.com/article                  │
 │   Title:       Example Article Title                        │
-│   Created:     2024-01-15 14:30                              │
-│                                                               │
-│ Press any key to exit...                                     │
+│   Created:     2024-01-15 14:30                             │
+│                                                             │
+│ Press any key to exit...                                    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -254,25 +254,60 @@ func (m *addLinkForm) handleURLInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 ```
 
-**2. Scraping Command**
+**2. Scraping Command (After Refactoring)**
 
 ```go
-func (m *addLinkForm) scrapeURL(urlStr string) tea.Cmd {
+func (m *addLinkForm) scrapeURL(ctx context.Context, urlStr string) tea.Cmd {
     return func() tea.Msg {
-        // Check health first
-        if err := m.scraperService.CheckHealth(); err != nil {
-            return scrapeErrorMsg{err: err}
+        // Check health first (with detailed status)
+        healthStatus, err := m.scraperService.CheckHealthDetailed()
+        if err != nil {
+            return scrapeErrorMsg{
+                err: &scraper.ScraperError{
+                    Type:    scraper.ErrorTypeServiceUnavailable,
+                    Message: "Scraper service unavailable",
+                    Cause:   err,
+                },
+            }
         }
 
-        // Scrape the URL
+        // Progress callback for UI updates
+        onProgress := func(stage scraper.ScrapeStage, message string) {
+            // Send progress update to TUI (would need progress message type)
+            // This allows showing "Checking service...", "Fetching page...", etc.
+        }
+
+        // Scrape the URL with context and progress
         timeout := 30 // from config
-        result, err := m.scraperService.Scrape(urlStr, timeout*1000)
+        result, err := m.scraperService.ScrapeWithProgress(
+            ctx,
+            urlStr,
+            timeout*1000,
+            onProgress,
+        )
         if err != nil {
-            return scrapeErrorMsg{err: err}
+            // Handle structured errors
+            var scraperErr *scraper.ScraperError
+            if errors.As(err, &scraperErr) {
+                return scrapeErrorMsg{err: scraperErr}
+            }
+            // Fallback for non-structured errors
+            return scrapeErrorMsg{
+                err: &scraper.ScraperError{
+                    Type:    scraper.ErrorTypeNetwork,
+                    Message: "Scraping failed",
+                    Cause:   err,
+                },
+            }
         }
 
         if !result.Success {
-            return scrapeErrorMsg{err: fmt.Errorf(result.Error)}
+            return scrapeErrorMsg{
+                err: &scraper.ScraperError{
+                    Type:    scraper.ErrorTypeExtraction,
+                    Message: result.Error,
+                },
+            }
         }
 
         return scrapeSuccessMsg{result: result}
@@ -280,7 +315,7 @@ func (m *addLinkForm) scrapeURL(urlStr string) tea.Cmd {
 }
 ```
 
-**3. Scraping Result Handler**
+**3. Scraping Result Handler (After Refactoring)**
 
 ```go
 func (m *addLinkForm) handleScrapeResult(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -297,6 +332,14 @@ func (m *addLinkForm) handleScrapeResult(msg tea.Msg) (tea.Model, tea.Cmd) {
             m.textInput.SetValue(msg.result.Text)
         }
 
+        // Store metadata for display
+        if msg.result.Duration > 0 {
+            m.scrapeDuration = msg.result.Duration
+        }
+        if len(msg.result.Warnings) > 0 {
+            m.scrapeWarnings = msg.result.Warnings
+        }
+
         // Move to review step
         m.step = stepReview
         m.titleInput.Focus()
@@ -306,10 +349,25 @@ func (m *addLinkForm) handleScrapeResult(msg tea.Msg) (tea.Model, tea.Cmd) {
         m.scraping = false
         m.scrapeError = msg.err
 
+        // Use structured error for better user messages
+        var scraperErr *scraper.ScraperError
+        if errors.As(msg.err, &scraperErr) {
+            // Store error type for conditional handling
+            m.scrapeErrorType = scraperErr.Type
+            // Can show specific messages based on error type
+            // e.g., "Service unavailable - check if services are running"
+        }
+
         // Continue to manual entry even if scraping failed
         m.step = stepReview
         m.titleInput.Focus()
         return m, textinput.Blink
+
+    case scrapeProgressMsg:
+        // Handle progress updates
+        m.scrapeProgress = msg.stage
+        m.scrapeProgressMessage = msg.message
+        return m, nil
     }
     return m, nil
 }
@@ -382,19 +440,36 @@ func (m *addLinkForm) renderURLInput() string {
 }
 ```
 
-#### Scraping View
+#### Scraping View (After Refactoring)
 
 ```go
 func (m *addLinkForm) renderScraping() string {
     var s strings.Builder
     s.WriteString("\nAdd New Link\n\n")
     s.WriteString("✓ URL: " + m.urlInput.Value() + "\n\n")
-    s.WriteString("⏳ Scraping URL... (this may take a few seconds)\n\n")
 
-    // Show progress indicator (spinner)
-    s.WriteString("Checking scraper service... ")
-    s.WriteString("✓\n")
-    s.WriteString("Extracting content...\n")
+    // Show current progress stage
+    switch m.scrapeProgress {
+    case scraper.StageHealthCheck:
+        s.WriteString("⏳ Checking scraper service...\n")
+    case scraper.StageFetching:
+        s.WriteString("✓ Service available\n")
+        s.WriteString("⏳ Fetching page content...\n")
+    case scraper.StageExtracting:
+        s.WriteString("✓ Page fetched\n")
+        s.WriteString("⏳ Extracting content...\n")
+    default:
+        s.WriteString("⏳ Scraping URL... (this may take a few seconds)\n")
+    }
+
+    // Show progress message if available
+    if m.scrapeProgressMessage != "" {
+        s.WriteString("\n")
+        s.WriteString(m.scrapeProgressMessage)
+        s.WriteString("\n")
+    }
+
+    s.WriteString("\n(Press Esc to cancel)\n")
 
     return s.String()
 }
@@ -461,7 +536,12 @@ type scrapeSuccessMsg struct {
 }
 
 type scrapeErrorMsg struct {
-    err error
+    err error  // Will be *scraper.ScraperError after refactoring
+}
+
+type scrapeProgressMsg struct {
+    stage   scraper.ScrapeStage
+    message string
 }
 
 // Existing messages
@@ -471,6 +551,23 @@ type submitErrorMsg struct {
 
 type submitSuccessMsg struct {
     link *models.Link
+}
+```
+
+### Additional Form Fields (After Refactoring)
+
+```go
+type addLinkForm struct {
+    // ... existing fields ...
+
+    // New fields for enhanced features
+    scrapeDuration    time.Duration
+    scrapeWarnings    []string
+    scrapeProgress    scraper.ScrapeStage
+    scrapeProgressMessage string
+    scrapeErrorType   scraper.ErrorType
+    scrapeCtx         context.Context
+    scrapeCancel      context.CancelFunc
 }
 ```
 
@@ -595,6 +692,289 @@ func newAddLinkForm(client *client.Client, scraperService *scraper.ScraperServic
 
 ---
 
+## Planned Refactoring for Cleaner TUI Integration
+
+To make the TUI implementation cleaner and more maintainable, the following refactorings are planned for the scraper client (`pkg/scraper/client.go`):
+
+### 1. Context Support for Cancellation ⏳ TODO
+
+**Current Issue**: The scraper client doesn't support context cancellation, making it difficult to cancel long-running scrape operations from the TUI.
+
+**Proposed Solution**:
+
+- Add `context.Context` parameter to `Scrape()` method
+- Support cancellation during HTTP requests
+- Allow TUI to cancel scraping when user presses Esc
+
+```go
+// Proposed API
+func (s *ScraperService) ScrapeWithContext(ctx context.Context, url string, timeout int) (*ScrapeResponse, error) {
+    req, err := http.NewRequestWithContext(ctx, "POST", s.baseURL+"/scrape", ...)
+    // ... rest of implementation
+}
+
+// Backward compatibility wrapper
+func (s *ScraperService) Scrape(url string, timeout int) (*ScrapeResponse, error) {
+    return s.ScrapeWithContext(context.Background(), url, timeout)
+}
+```
+
+**Benefits for TUI**:
+
+- Users can cancel scraping operations
+- Better resource management
+- Cleaner error handling when cancelled
+
+### 2. Structured Error Types ⏳ TODO
+
+**Current Issue**: All errors are generic `error` types, making it difficult for the TUI to provide specific error messages and handle different error scenarios appropriately.
+
+**Proposed Solution**: Create specific error types that categorize different failure modes:
+
+```go
+// Error types
+type ScraperError struct {
+    Type    ErrorType
+    Message string
+    Cause   error
+}
+
+type ErrorType string
+
+const (
+    ErrorTypeServiceUnavailable ErrorType = "service_unavailable"
+    ErrorTypeTimeout            ErrorType = "timeout"
+    ErrorTypeNetwork            ErrorType = "network"
+    ErrorTypeExtraction         ErrorType = "extraction"
+    ErrorTypeInvalidURL         ErrorType = "invalid_url"
+    ErrorTypeInvalidResponse    ErrorType = "invalid_response"
+)
+
+// Helper methods
+func (e *ScraperError) Error() string { ... }
+func (e *ScraperError) IsRetryable() bool { ... }
+func (e *ScraperError) UserMessage() string { ... }
+```
+
+**Benefits for TUI**:
+
+- Show specific, actionable error messages
+- Decide whether to retry automatically
+- Provide better user guidance (e.g., "Service unavailable - check if services are running")
+
+### 3. Progress Callbacks ⏳ TODO
+
+**Current Issue**: The TUI can't show intermediate progress during scraping (e.g., "Checking service...", "Fetching page...", "Extracting content...").
+
+**Proposed Solution**: Add optional progress callback support:
+
+```go
+type ProgressCallback func(stage ScrapeStage, message string)
+
+type ScrapeStage string
+
+const (
+    StageHealthCheck    ScrapeStage = "health_check"
+    StageFetching       ScrapeStage = "fetching"
+    StageExtracting     ScrapeStage = "extracting"
+    StageComplete       ScrapeStage = "complete"
+)
+
+func (s *ScraperService) ScrapeWithProgress(
+    ctx context.Context,
+    url string,
+    timeout int,
+    onProgress ProgressCallback,
+) (*ScrapeResponse, error) {
+    if onProgress != nil {
+        onProgress(StageHealthCheck, "Checking scraper service...")
+    }
+    // ... rest of implementation with progress updates
+}
+```
+
+**Benefits for TUI**:
+
+- Show real-time progress to users
+- Better UX during long operations
+- Clear indication of what's happening
+
+### 4. Enhanced Response Metadata ⏳ TODO
+
+**Current Issue**: `ScrapeResponse` only includes basic fields. Additional metadata would help the TUI provide better feedback.
+
+**Proposed Solution**: Add metadata fields to response:
+
+```go
+type ScrapeResponse struct {
+    Success     bool   `json:"success"`
+    URL         string `json:"url"`
+    Title       string `json:"title"`
+    Text        string `json:"text"`
+    ExtractedAt string `json:"extracted_at"`
+    Error       string `json:"error,omitempty"`
+
+    // New metadata fields
+    Duration    time.Duration `json:"duration,omitempty"`    // Total scraping duration
+    Partial     bool          `json:"partial,omitempty"`     // True if only partial content extracted
+    Warnings    []string      `json:"warnings,omitempty"`    // Non-fatal warnings
+}
+```
+
+**Benefits for TUI**:
+
+- Show scraping duration to user
+- Indicate if content is partial
+- Display warnings (e.g., "Title extracted but text extraction failed")
+
+### 5. Batch Scraping Support ⏳ TODO
+
+**Current Issue**: The scraper service supports batch scraping (`/scrape/batch`), but the Go client doesn't expose this functionality.
+
+**Proposed Solution**: Add batch scraping method:
+
+```go
+type BatchScrapeRequest struct {
+    URLs    []string `json:"urls"`
+    Timeout int      `json:"timeout,omitempty"`
+}
+
+type BatchScrapeResult struct {
+    URL         string
+    Title       string
+    Text        string
+    ExtractedAt string
+    Error       error
+}
+
+func (s *ScraperService) ScrapeBatch(
+    ctx context.Context,
+    urls []string,
+    timeout int,
+) ([]BatchScrapeResult, error) {
+    // Implementation
+}
+```
+
+**Benefits for TUI**:
+
+- Future feature: batch URL import
+- Better performance for multiple URLs
+- Consistent API surface
+
+### 6. Automatic Retry Logic ⏳ TODO
+
+**Current Issue**: Transient errors (network hiccups, temporary service unavailability) require manual retry from the user.
+
+**Proposed Solution**: Add configurable retry logic:
+
+```go
+type RetryConfig struct {
+    MaxRetries      int
+    RetryDelay      time.Duration
+    RetryableErrors []ErrorType  // Which error types to retry
+}
+
+func (s *ScraperService) ScrapeWithRetry(
+    ctx context.Context,
+    url string,
+    timeout int,
+    config RetryConfig,
+) (*ScrapeResponse, error) {
+    // Implementation with retry logic
+}
+```
+
+**Benefits for TUI**:
+
+- Better reliability for transient errors
+- Reduced user friction
+- Configurable retry behavior
+
+### 7. Health Check with Details ⏳ TODO
+
+**Current Issue**: Health check only returns success/failure, no additional context.
+
+**Proposed Solution**: Return detailed health information:
+
+```go
+type HealthStatus struct {
+    Status      string    `json:"status"`       // "ok", "degraded", "down"
+    Initialized bool      `json:"initialized"`
+    Timestamp   time.Time `json:"timestamp"`
+    Version     string    `json:"version,omitempty"`
+    Message     string    `json:"message,omitempty"`
+}
+
+func (s *ScraperService) CheckHealthDetailed() (*HealthStatus, error) {
+    // Implementation
+}
+```
+
+**Benefits for TUI**:
+
+- Show more informative health status
+- Better error messages
+- Help users diagnose issues
+
+### 8. Request/Response Logging Abstraction ⏳ TODO
+
+**Current Issue**: HTTP-level logging is mixed with business logic.
+
+**Proposed Solution**: Abstract logging behind an interface:
+
+```go
+type Logger interface {
+    Debug(msg string, fields ...Field)
+    Info(msg string, fields ...Field)
+    Warn(msg string, fields ...Field)
+    Error(msg string, err error, fields ...Field)
+}
+
+type ScraperService struct {
+    baseURL string
+    client  *http.Client
+    logger  Logger  // Optional logger
+}
+```
+
+**Benefits for TUI**:
+
+- Better control over logging in TUI context
+- Can suppress or redirect logs
+- Easier testing
+
+### Implementation Priority
+
+1. **High Priority** (Needed for TUI):
+   - Context support (#1)
+   - Structured error types (#2)
+   - Progress callbacks (#3)
+
+2. **Medium Priority** (Nice to have):
+   - Enhanced response metadata (#4)
+   - Health check details (#7)
+
+3. **Low Priority** (Future features):
+   - Batch scraping (#5)
+   - Automatic retry (#6)
+   - Logging abstraction (#8)
+
+### Migration Strategy
+
+1. **Phase 1**: Add new methods alongside existing ones (backward compatible)
+2. **Phase 2**: Update TUI to use new methods
+3. **Phase 3**: Deprecate old methods (with warnings)
+4. **Phase 4**: Remove old methods in next major version
+
+This approach ensures:
+
+- No breaking changes to existing code
+- TUI can use improved API immediately
+- Gradual migration path
+
+---
+
 ## Testing Strategy
 
 ### Unit Tests
@@ -632,6 +1012,41 @@ func newAddLinkForm(client *client.Client, scraperService *scraper.ScraperServic
 
 ## Implementation Phases
 
+### Phase 0: Scraper Client Refactoring ⏳ TODO (Prerequisites)
+
+**Goal**: Refactor scraper client to support better TUI integration
+
+- [ ] **Context Support** (#1)
+    - Add `ScrapeWithContext()` method
+    - Support cancellation during operations
+    - Update existing `Scrape()` to use context.Background()
+
+- [ ] **Structured Error Types** (#2)
+    - Create `ScraperError` type with error categories
+    - Implement `ErrorType` enum (ServiceUnavailable, Timeout, Network, etc.)
+    - Add helper methods (`IsRetryable()`, `UserMessage()`)
+    - Update all error returns to use structured types
+
+- [ ] **Progress Callbacks** (#3)
+    - Add `ProgressCallback` type and `ScrapeStage` enum
+    - Implement `ScrapeWithProgress()` method
+    - Add progress updates at key stages (health check, fetching, extracting)
+
+- [ ] **Enhanced Response Metadata** (#4)
+    - Add `Duration`, `Partial`, `Warnings` fields to `ScrapeResponse`
+    - Update scraper service to return metadata (if available)
+
+- [ ] **Health Check Details** (#7)
+    - Create `HealthStatus` type with detailed information
+    - Implement `CheckHealthDetailed()` method
+    - Keep existing `CheckHealth()` for backward compatibility
+
+**Note**: These refactorings can be done incrementally. Minimum required for TUI:
+
+- Context support (#1) - Required for cancellation
+- Structured error types (#2) - Required for better error handling
+- Progress callbacks (#3) - Highly recommended for UX
+
 ### Phase 1: Basic Integration ✅ (Foundation Exists)
 
 - [x] Existing `addLinkForm` structure
@@ -640,26 +1055,32 @@ func newAddLinkForm(client *client.Client, scraperService *scraper.ScraperServic
 
 ### Phase 2: Scraping Integration ⏳ TODO
 
+**Prerequisites**: Phase 0 refactorings (#1, #2, #3 minimum)
+
 - [ ] Add scraper service to form
-- [ ] Implement scraping command
-- [ ] Handle scraping results
+- [ ] Implement scraping command with context support
+- [ ] Handle scraping results with structured errors
 - [ ] Auto-fill fields with scraped content
+- [ ] Integrate progress callbacks for loading states
+- [ ] Handle cancellation (user presses Esc during scraping)
 
 ### Phase 3: Enhanced UX ⏳ TODO
 
 - [ ] Multi-field navigation (Tab)
 - [ ] Visual focus indicators
 - [ ] Scraped content indicators
-- [ ] Loading states
-- [ ] Error messages
+- [ ] Loading states with progress updates
+- [ ] Error messages using structured error types
+- [ ] Show scraping duration in success message
 
 ### Phase 4: Polish ⏳ TODO
 
 - [ ] Keyboard shortcuts
 - [ ] Skip scraping option
-- [ ] Better error handling
+- [ ] Better error handling with retry suggestions
 - [ ] Success animations
 - [ ] Help text
+- [ ] Show warnings from scraping (if any)
 
 ---
 
@@ -729,5 +1150,8 @@ func newAddLinkForm(client *client.Client, scraperService *scraper.ScraperServic
 
 ---
 
-**Last Updated**: Initial design document created
-**Next Steps**: Phase 2 implementation - Scraping Integration
+**Last Updated**: Added planned refactorings for cleaner TUI integration
+**Next Steps**:
+
+1. Phase 0: Implement scraper client refactorings (context support, error types, progress callbacks)
+2. Phase 2: Implement scraping integration in TUI using refactored client
