@@ -91,7 +91,7 @@ func NewAddLinkForm(
 		scrapeTimeoutSeconds = 30
 	}
 
-	return &addLinkForm{
+	form := &addLinkForm{
 		client:               apiClient,
 		scraperService:       scraperService,
 		urlInput:             urlInput,
@@ -102,6 +102,25 @@ func NewAddLinkForm(
 		currentField:         0,
 		scrapeTimeoutSeconds: scrapeTimeoutSeconds,
 	}
+
+	// Wrap with viewport
+	return NewViewportWrapper(form, ViewportConfig{
+		Title:       "Add New Link",
+		ShowHeader:  true,
+		ShowFooter:  true,
+		UseViewport: false, // Forms are typically short
+		EnableHelp:  true,
+		EnableMenu:  true,
+		HelpContent: AddLinkFormHelpContent,
+		OnMenu: func() tea.Cmd {
+			// Return command that sends MenuNavigationMsg to return to root menu
+			return func() tea.Msg {
+				return MenuNavigationMsg{}
+			}
+		},
+		MinWidth:  60,
+		MinHeight: 15,
+	})
 }
 
 // Init implements tea.Model.
@@ -133,6 +152,12 @@ type submitSuccessMsg struct {
 
 // Update implements tea.Model.
 func (m *addLinkForm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Forward MenuNavigationMsg unchanged (let it bubble up to root)
+	switch msg.(type) {
+	case MenuNavigationMsg:
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -478,7 +503,7 @@ func (m *addLinkForm) View() string {
 
 func (m *addLinkForm) renderURLInput() string {
 	var b strings.Builder
-	b.WriteString(renderTitle("Add New Link"))
+	// Title is rendered by the viewport wrapper header
 	b.WriteString(fieldLabelStyle.Render("URL (required):"))
 	b.WriteString("\n")
 	b.WriteString(m.urlInput.View())
@@ -495,7 +520,7 @@ func (m *addLinkForm) renderURLInput() string {
 }
 
 func (m *addLinkForm) renderScraping() string {
-	return renderScrapingProgress("Scraping URL", string(m.scrapeProgress), m.scrapeProgressMsg)
+	return renderScrapingProgress(string(m.scrapeProgress), m.scrapeProgressMsg)
 }
 
 func (m *addLinkForm) renderReview() string {

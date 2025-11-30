@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"link-mgmt-go/pkg/cli/client"
+	"link-mgmt-go/pkg/cli/logger"
 	"link-mgmt-go/pkg/models"
 	"link-mgmt-go/pkg/scraper"
 
@@ -37,6 +38,7 @@ type manageLinksModel struct {
 	scrapeMessage  string
 	scrapeCtx      context.Context
 	scrapeCancel   context.CancelFunc
+	progressChan   chan manageScrapeProgressMsg
 	timeoutSeconds int
 	updated        *models.Link
 }
@@ -74,6 +76,15 @@ type manageEnrichSavedMsg struct {
 	err  error
 }
 
+type manageScrapeProgressMsg struct {
+	stage   scraper.ScrapeStage
+	message string
+}
+
+type manageProgressTickMsg struct {
+	done bool
+}
+
 // NewManageLinksModel creates a new combined manage links flow.
 func NewManageLinksModel(
 	c *client.Client,
@@ -89,13 +100,32 @@ func NewManageLinksModel(
 	confirm.CharLimit = 1
 	confirm.Width = 10
 
-	return &manageLinksModel{
+	model := &manageLinksModel{
 		client:         c,
 		scraperService: scraperService,
 		timeoutSeconds: timeoutSeconds,
 		step:           manageStepListLinks,
 		confirm:        confirm,
 	}
+
+	// Wrap with viewport (enable scrolling for long lists)
+	return NewViewportWrapper(model, ViewportConfig{
+		Title:       "Manage Links",
+		ShowHeader:  true,
+		ShowFooter:  true,
+		UseViewport: true, // Enable scrolling for long link lists
+		EnableHelp:  true,
+		EnableMenu:  true,
+		HelpContent: ManageLinksHelpContent,
+		OnMenu: func() tea.Cmd {
+			// Return command that sends MenuNavigationMsg to return to root menu
+			return func() tea.Msg {
+				return MenuNavigationMsg{}
+			}
+		},
+		MinWidth:  60,
+		MinHeight: 10,
+	})
 }
 
 func (m *manageLinksModel) Init() tea.Cmd {
@@ -106,8 +136,18 @@ func (m *manageLinksModel) Init() tea.Cmd {
 }
 
 func (m *manageLinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	logger.Log("manageLinksModel.Update() called: msg_type=%T, step=%d, ready=%v", msg, m.step, m.ready)
+
+	// Forward MenuNavigationMsg unchanged (let it bubble up to root)
+	switch msg.(type) {
+	case MenuNavigationMsg:
+		logger.Log("manageLinksModel.Update: forwarding MenuNavigationMsg")
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
 	case manageLinksLoadedMsg:
+		logger.Log("manageLinksModel.Update: received manageLinksLoadedMsg, links_count=%d, err=%v", len(msg.links), msg.err != nil)
 		if msg.err != nil {
 			m.err = msg.err
 			m.ready = true
@@ -155,9 +195,33 @@ func (m *manageLinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return manageLinksLoadedMsg{links: links, err: err}
 		}
 
+	case manageScrapeProgressMsg:
+		m.scrapeStage = msg.stage
+		m.scrapeMessage = msg.message
+		// Continue watching progress if still scraping
+		if m.scraping {
+			return m, m.watchProgress()
+		}
+		return m, nil
+
+	case manageProgressTickMsg:
+		// Continue watching for progress if still scraping
+		if m.scraping && !msg.done {
+			// Schedule another check soon
+			return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
+				// Call watchProgress command and return its message
+				cmd := m.watchProgress()
+				return cmd()
+			})
+		}
+		// If done or not scraping, stop watching
+		return m, nil
+
 	case tea.KeyMsg:
+		logger.Log("manageLinksModel.Update: received KeyMsg, key=%q, step=%d", msg.String(), m.step)
 		switch m.step {
 		case manageStepListLinks:
+			logger.Log("manageLinksModel.Update: handling list keys")
 			return m.handleListKeys(msg)
 		case manageStepActionMenu:
 			return m.handleActionMenuKeys(msg)
@@ -273,43 +337,67 @@ func (m *manageLinksModel) handleDeleteConfirmKeys(msg tea.KeyMsg) (tea.Model, t
 }
 
 func (m *manageLinksModel) View() string {
+	logger.Log("manageLinksModel.View() called: ready=%v, step=%d, err=%v, links_count=%d, selected=%d",
+		m.ready, m.step, m.err != nil, len(m.links), m.selected)
+
 	if !m.ready {
+		logger.Log("View: returning loading state")
 		return renderLoadingState("Loading links...")
 	}
 
 	if m.err != nil && m.step != manageStepDone {
+		logger.LogError(m.err, "View: returning error view, step=%d", m.step)
 		return renderErrorView(m.err)
 	}
 
+	var result string
 	switch m.step {
 	case manageStepListLinks:
-		return m.renderList()
+		logger.Log("View: rendering list view")
+		result = m.renderList()
 	case manageStepActionMenu:
-		return m.renderActionMenu()
+		logger.Log("View: rendering action menu, selected=%d", m.selected)
+		result = m.renderActionMenu()
 	case manageStepViewDetails:
-		return m.renderViewDetails()
+		logger.Log("View: rendering view details, selected=%d", m.selected)
+		result = m.renderViewDetails()
 	case manageStepDeleteConfirm:
-		return m.renderDeleteConfirm()
+		logger.Log("View: rendering delete confirm, selected=%d", m.selected)
+		result = m.renderDeleteConfirm()
 	case manageStepScraping:
-		return m.renderScraping()
+		logger.Log("View: rendering scraping, stage=%s", m.scrapeStage)
+		result = m.renderScraping()
 	case manageStepScrapeSaving:
-		return "\n" + infoStyle.Render("Saving enriched content...") + "\n"
+		logger.Log("View: rendering scrape saving")
+		result = "\n" + infoStyle.Render("Saving enriched content...") + "\n"
 	case manageStepScrapeDone:
-		return m.renderScrapeDone()
+		logger.Log("View: rendering scrape done, error=%v, updated=%v", m.scrapeError != nil, m.updated != nil)
+		result = m.renderScrapeDone()
 	case manageStepDone:
-		return renderSuccessView("Link deleted successfully!")
+		logger.Log("View: rendering done (deletion success)")
+		result = renderSuccessView("Link deleted successfully!")
+	default:
+		logger.Log("View: unknown step=%d, returning empty string", m.step)
+		return ""
 	}
 
-	return ""
+	logger.Log("View: result length=%d bytes", len(result))
+	return result
 }
 
 func (m *manageLinksModel) renderList() string {
+	logger.Log("renderList: called with %d links, selected=%d", len(m.links), m.selected)
+
 	if len(m.links) == 0 {
+		logger.Log("renderList: no links, returning empty state")
 		return renderEmptyState("No links found.")
 	}
 
-	s := renderLinkList(m.links, m.selected, "Manage Links", "Select a link:")
+	// Title is rendered by the viewport wrapper header
+	s := renderLinkList(m.links, m.selected, "", "Select a link:")
 	s += helpStyle.Render("(Use ↑/↓ or j/k to navigate, Enter to select, Esc to quit)") + "\n"
+
+	logger.Log("renderList: generated content, length=%d bytes", len(s))
 	return s
 }
 
@@ -410,6 +498,7 @@ func (m *manageLinksModel) startScraping() (tea.Model, tea.Cmd) {
 	m.scrapeError = nil
 	m.scrapeStage = scraper.StageHealthCheck
 	m.scrapeMessage = "Starting scrape..."
+	m.progressChan = make(chan manageScrapeProgressMsg, 10)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(m.timeoutSeconds)*time.Second)
 	m.scrapeCtx = ctx
@@ -418,7 +507,10 @@ func (m *manageLinksModel) startScraping() (tea.Model, tea.Cmd) {
 	link := m.links[m.selected]
 	url := link.URL
 
-	return m, m.runScrapeCommand(ctx, url)
+	return m, tea.Batch(
+		m.runScrapeCommand(ctx, url),
+		m.watchProgress(),
+	)
 }
 
 func (m *manageLinksModel) runScrapeCommand(ctx context.Context, url string) tea.Cmd {
@@ -429,11 +521,52 @@ func (m *manageLinksModel) runScrapeCommand(ctx context.Context, url string) tea
 			}
 		}()
 
-		result, err := m.scraperService.ScrapeWithProgress(ctx, url, m.timeoutSeconds, nil)
+		// Progress callback that writes to the model's progress channel
+		cb := func(stage scraper.ScrapeStage, message string) {
+			select {
+			case m.progressChan <- manageScrapeProgressMsg{
+				stage:   stage,
+				message: message,
+			}:
+			case <-ctx.Done():
+				return
+			}
+		}
+
+		// Run scrape (this blocks until complete)
+		result, err := m.scraperService.ScrapeWithProgress(ctx, url, m.timeoutSeconds, cb)
+
+		// Close progress channel to signal completion
+		if m.progressChan != nil {
+			close(m.progressChan)
+		}
+
 		if err != nil {
 			return manageScrapeDoneMsg{err: err}
 		}
 		return manageScrapeDoneMsg{result: result}
+	}
+}
+
+// watchProgress periodically reads from the progress channel and sends updates
+func (m *manageLinksModel) watchProgress() tea.Cmd {
+	return func() tea.Msg {
+		// Read from progress channel if available
+		if m.progressChan == nil {
+			return manageProgressTickMsg{done: true}
+		}
+		select {
+		case progress, ok := <-m.progressChan:
+			if ok {
+				// Send progress message and continue watching
+				return progress
+			}
+			// Channel closed, stop watching
+			return manageProgressTickMsg{done: true}
+		default:
+			// No progress yet, check again soon
+			return manageProgressTickMsg{done: false}
+		}
 	}
 }
 
@@ -475,7 +608,7 @@ func (m *manageLinksModel) saveEnrichedLink() tea.Cmd {
 }
 
 func (m *manageLinksModel) renderScraping() string {
-	return renderScrapingProgress("Scraping Selected Link", string(m.scrapeStage), m.scrapeMessage)
+	return renderScrapingProgress(string(m.scrapeStage), m.scrapeMessage)
 }
 
 func (m *manageLinksModel) renderScrapeDone() string {

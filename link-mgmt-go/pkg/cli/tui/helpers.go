@@ -48,7 +48,10 @@ func renderLinkList(links []models.Link, selected int, title string, subtitle st
 	}
 
 	var b strings.Builder
-	b.WriteString(renderTitle(title))
+	// Only render title if provided (wrapper may provide it)
+	if title != "" {
+		b.WriteString(renderTitle(title))
+	}
 	if subtitle != "" {
 		b.WriteString(boldStyle.Render(subtitle) + "\n\n")
 	}
@@ -247,9 +250,9 @@ func renderSuccessWithDetails(message string, link *models.Link, includeUserID b
 }
 
 // renderScrapingProgress renders a scraping progress view
-func renderScrapingProgress(title string, stage string, message string) string {
+// Note: Title is rendered by the viewport wrapper header, so it's not included here
+func renderScrapingProgress(stage string, message string) string {
 	var b strings.Builder
-	b.WriteString(renderTitle(title))
 
 	stageLabel := stage
 	if stageLabel == "" {
