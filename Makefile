@@ -6,9 +6,9 @@ help: ## list make commands
 	@echo "Root commands:"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
-	@echo "Environment Profiles:"
-	@echo "  [dev]  - Development profile with hot reloading"
-	@echo "  [prod] - Production profile with optimized builds"
+	@echo "Environment Commands:"
+	@echo "  [dev]  - Development environment (docker-compose.yml)"
+	@echo "  [prod] - Production environment (docker-compose.prod.yml)"
 	@echo "  [db]   - Database operations"
 	@echo ""
 	@echo "Scraper commands (scraper/):"
@@ -28,37 +28,31 @@ clean: ## Clean up
 	find . -type f -name "*.test" -exec rm -f {} +
 	find . -type f -name "*.out" -exec rm -f {} +
 
-# docker commands - development profile
-dev-up: ## [dev] Start development containers (with hot reloading)
-	docker compose --profile dev up --build --remove-orphans
+# docker commands - development
+up: ## [dev] Start development containers (with hot reloading)
+	docker compose up --build --remove-orphans
 
-dev-upd: ## [dev] Start development containers in detached mode
-	docker compose --profile dev up -d --build
+upd: ## [dev] Start development containers in detached mode
+	docker compose up -d --build
 
-dev-down: ## [dev] Stop development containers
-	docker compose --profile dev down
-
-dev-logs: ## [dev] Follow development container logs
-	docker compose --profile dev logs -f
-
-dev-logs-scraper: ## [dev] Follow scraper development logs
-	docker compose --profile dev logs -f scraper-dev
-
-# docker commands - legacy (defaults to prod)
-up: ## [prod] Start production containers (alias for prod-up)
-	docker compose --profile prod up --build --remove-orphans
-
-upd: ## [prod] Start production containers in detached mode (alias for prod-upd)
-	docker compose --profile prod up -d --build
-
-down: ## Stop all containers (dev and prod)
+down: ## [dev] Stop development containers
 	docker compose down --remove-orphans
 
-purge: ## Purge all containers and volumes
-	docker compose down -v --remove-orphans
-
-logs: ## Follow logs from all containers
+logs: ## [dev] Follow development container logs
 	docker compose logs -f
+
+# docker commands - production
+prod-up: ## [prod] Start production containers
+	docker compose -f docker-compose.prod.yml up --build --remove-orphans
+
+prod-upd: ## [prod] Start production containers in detached mode
+	docker compose -f docker-compose.prod.yml up -d --build
+
+prod-down: ## [prod] Stop production containers
+	docker compose -f docker-compose.prod.yml down --remove-orphans
+
+prod-logs: ## [prod] Follow production container logs
+	docker compose -f docker-compose.prod.yml logs -f
 
 postgres-up: ## [db] Start only PostgreSQL database
 	docker compose up -d postgres

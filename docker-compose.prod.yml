@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: link_mgmt_db
+      POSTGRES_USER: link_mgmt_user
+      POSTGRES_PASSWORD: link_mgmt_pwd
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # Production scraper service
+  scraper:
+    build:
+      context: ./scraper
+      dockerfile: Dockerfile
+    container_name: link-mgmt-scraper
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+
+volumes:
+  postgres_data:

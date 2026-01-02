@@ -1,5 +1,4 @@
 services:
-  # Base services (available in all profiles)
   postgres:
     image: postgres:15
     restart: unless-stopped
@@ -11,29 +10,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    profiles:
-      - dev
-      - prod
-
-  # Production scraper service
-  scraper:
-    build:
-      context: ./scraper
-      dockerfile: Dockerfile
-    container_name: link-mgmt-scraper
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      - PORT=3000
-    # healthcheck:
-    #   test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-    #   interval: 30s
-    #   timeout: 3s
-    #   retries: 3
-    #   start_period: 10s
-    profiles:
-      - prod
 
   # Development API service (with hot reloading)
   api-dev:
@@ -55,14 +31,6 @@ services:
       - /app/bin
     depends_on:
       - postgres
-    # healthcheck:
-    #   test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
-    #   interval: 30s
-    #   timeout: 3s
-    #   retries: 3
-    #   start_period: 10s
-    profiles:
-      - dev
 
   # Development scraper service (with hot reloading)
   scraper-dev:
@@ -83,14 +51,6 @@ services:
       - ./scraper/package.json:/app/package.json:ro
       - ./scraper/tsconfig.json:/app/tsconfig.json:ro
     command: ["bun", "run", "dev"]
-    # healthcheck:
-    #   test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-    #   interval: 30s
-    #   timeout: 3s
-    #   retries: 3
-    #   start_period: 10s
-    profiles:
-      - dev
 
   # Nginx reverse proxy
   nginx:
@@ -104,14 +64,6 @@ services:
     depends_on:
       - api-dev
       - scraper-dev
-    # healthcheck:
-    #   test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
-    #   interval: 30s
-    #   timeout: 3s
-    #   retries: 3
-    #   start_period: 10s
-    profiles:
-      - dev
 
 volumes:
   postgres_data:
