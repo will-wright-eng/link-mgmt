@@ -41,6 +41,9 @@ type manageLinksModel struct {
 	progressChan   chan manageScrapeProgressMsg
 	timeoutSeconds int
 	updated        *models.Link
+
+	// Viewport dimensions for proper rendering
+	width int
 }
 
 const (
@@ -146,6 +149,15 @@ func (m *manageLinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		// Store width for rendering - this allows us to render content that fits the viewport
+		m.width = msg.Width
+		if m.width == 0 {
+			m.width = 80 // Default fallback
+		}
+		logger.Log("manageLinksModel.Update: received WindowSizeMsg, width=%d", m.width)
+		return m, nil
+
 	case manageLinksLoadedMsg:
 		logger.Log("manageLinksModel.Update: received manageLinksLoadedMsg, links_count=%d, err=%v", len(msg.links), msg.err != nil)
 		if msg.err != nil {
@@ -385,16 +397,50 @@ func (m *manageLinksModel) View() string {
 	return result
 }
 
+// GetSelectedIndex implements SelectableModel interface for automatic viewport scrolling
+func (m *manageLinksModel) GetSelectedIndex() int {
+	// Only return selection when in list view step
+	if m.step == manageStepListLinks {
+		return m.selected
+	}
+	return -1 // No selection in other steps
+}
+
+// GetItemHeight implements SelectableModel interface
+// Each link renders as 2 lines: title + URL
+func (m *manageLinksModel) GetItemHeight() int {
+	return 2
+}
+
+// GetListHeaderHeight implements SelectableModel interface
+// The list has a subtitle "Select a link:" (1 line) + blank line (1 line) = 2 lines
+// Plus the help text at the bottom (1 line) = 3 lines total before items
+// Actually, looking at renderLinkList: subtitle + blank line = 2 lines before items
+// Help text is after items, so we only count the subtitle + blank = 2 lines
+func (m *manageLinksModel) GetListHeaderHeight() int {
+	if m.step == manageStepListLinks {
+		// Subtitle "Select a link:" (1 line) + blank line (1 line) = 2 lines
+		return 2
+	}
+	return 0
+}
+
 func (m *manageLinksModel) renderList() string {
-	logger.Log("renderList: called with %d links, selected=%d", len(m.links), m.selected)
+	logger.Log("renderList: called with %d links, selected=%d, width=%d", len(m.links), m.selected, m.width)
 
 	if len(m.links) == 0 {
 		logger.Log("renderList: no links, returning empty state")
 		return renderEmptyState("No links found.")
 	}
 
+	// Use stored width for rendering, with fallback
+	maxWidth := m.width
+	if maxWidth == 0 {
+		maxWidth = 80
+	}
+
 	// Title is rendered by the viewport wrapper header
-	s := renderLinkList(m.links, m.selected, "", "Select a link:")
+	s := renderLinkList(m.links, m.selected, "", "Select a link:", maxWidth)
 	s += helpStyle.Render("(Use ↑/↓ or j/k to navigate, Enter to select, Esc to quit)") + "\n"
 
 	logger.Log("renderList: generated content, length=%d bytes", len(s))
@@ -406,13 +452,24 @@ func (m *manageLinksModel) renderActionMenu() string {
 		return renderErrorView(fmt.Errorf("invalid selection"))
 	}
 
+	// Use stored width for rendering, with fallback
+	maxWidth := m.width
+	if maxWidth == 0 {
+		maxWidth = 80
+	}
+
 	link := m.links[m.selected]
 	title := formatLinkTitle(link)
-	url := truncateURL(link.URL, 60)
+	// Use maxWidth for URL truncation, but leave some margin for formatting
+	urlTruncateWidth := maxWidth - 10
+	if urlTruncateWidth < 40 {
+		urlTruncateWidth = 40 // Minimum
+	}
+	url := truncateURL(link.URL, urlTruncateWidth)
 
 	var b strings.Builder
 	b.WriteString(renderTitle("Link Actions"))
-	b.WriteString(renderDivider(60))
+	b.WriteString(renderDivider(maxWidth))
 	b.WriteString("\n\n")
 
 	b.WriteString(boldStyle.Render("Selected Link:") + "\n")
@@ -434,14 +491,20 @@ func (m *manageLinksModel) renderViewDetails() string {
 		return renderErrorView(fmt.Errorf("invalid selection"))
 	}
 
+	// Use stored width for rendering, with fallback
+	maxWidth := m.width
+	if maxWidth == 0 {
+		maxWidth = 80
+	}
+
 	link := m.links[m.selected]
 	var b strings.Builder
 
 	b.WriteString(renderTitle("Link Details"))
-	b.WriteString(renderDivider(60))
+	b.WriteString(renderDivider(maxWidth))
 	b.WriteString("\n\n")
 
-	b.WriteString(renderLinkDetailsFull(&link))
+	b.WriteString(renderLinkDetailsFull(&link, maxWidth))
 
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("(Press Enter, 'b', Esc, or 'q' to go back)") + "\n")
@@ -454,8 +517,20 @@ func (m *manageLinksModel) renderDeleteConfirm() string {
 		return renderErrorView(fmt.Errorf("invalid selection"))
 	}
 
+	// Use stored width for rendering, with fallback
+	maxWidth := m.width
+	if maxWidth == 0 {
+		maxWidth = 80
+	}
+
 	link := m.links[m.selected]
 	title := formatLinkTitle(link)
+	// Truncate URL if needed
+	urlTruncateWidth := maxWidth - 10
+	if urlTruncateWidth < 40 {
+		urlTruncateWidth = 40
+	}
+	url := truncateURL(link.URL, urlTruncateWidth)
 
 	var b strings.Builder
 	b.WriteString(renderTitle("Delete Link"))
@@ -464,7 +539,7 @@ func (m *manageLinksModel) renderDeleteConfirm() string {
 	b.WriteString(boldStyle.Render("Are you sure you want to delete:") + "\n")
 	b.WriteString(fmt.Sprintf("  %s\n", linkTitleStyle.Render(title)))
 	b.WriteString(fieldLabelStyle.Render("URL:"))
-	b.WriteString(fmt.Sprintf(" %s\n\n", link.URL))
+	b.WriteString(fmt.Sprintf(" %s\n\n", url))
 
 	b.WriteString(boldStyle.Render("Confirm (y/N):"))
 	b.WriteString(" ")

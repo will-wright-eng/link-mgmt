@@ -10,6 +10,22 @@ import (
 	"link-mgmt-go/pkg/cli/logger"
 )
 
+// SelectableModel is an interface that models can implement to expose their
+// selection state for automatic viewport scrolling.
+type SelectableModel interface {
+	// GetSelectedIndex returns the currently selected index, or -1 if no selection.
+	// This is used to automatically scroll the viewport to keep the selected item visible.
+	GetSelectedIndex() int
+
+	// GetItemHeight returns the height in lines of a single item in the list.
+	// For links, this is 2 (title + URL). Default is 1 if not implemented.
+	GetItemHeight() int
+
+	// GetListHeaderHeight returns the number of lines before the list items start.
+	// This includes titles, subtitles, etc. Default is 0 if not implemented.
+	GetListHeaderHeight() int
+}
+
 // ViewportWrapper wraps a model with viewport and common command support
 type ViewportWrapper struct {
 	model    tea.Model
@@ -21,6 +37,14 @@ type ViewportWrapper struct {
 	// Common commands
 	showHelp    bool
 	helpContent string
+
+	// Cached header/footer heights to avoid re-rendering on every layout calculation
+	cachedHeaderHeight int
+	cachedFooterHeight int
+	headerFooterDirty  bool // Flag to indicate if heights need recalculation
+
+	// Track previous selection for automatic scrolling
+	prevSelectedIndex int
 }
 
 // ViewportConfig configures the wrapper behavior
@@ -45,11 +69,12 @@ func NewViewportWrapper(model tea.Model, config ViewportConfig) *ViewportWrapper
 	// Viewport uses default key bindings (arrow keys, page up/down)
 
 	return &ViewportWrapper{
-		model:    model,
-		viewport: vp,
-		config:   config,
-		width:    80, // Default
-		height:   24, // Default
+		model:             model,
+		viewport:          vp,
+		config:            config,
+		width:             80, // Default
+		height:            24, // Default
+		prevSelectedIndex: -1, // Initialize to -1 to detect first selection change
 	}
 }
 
@@ -69,6 +94,11 @@ func (w *ViewportWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		logger.Log("ViewportWrapper.Update: WindowSizeMsg, width=%d, height=%d", msg.Width, msg.Height)
+		// Mark header/footer heights as dirty if dimensions changed significantly
+		// (header/footer might wrap differently with different widths)
+		if w.width != msg.Width {
+			w.headerFooterDirty = true
+		}
 		w.width = msg.Width
 		w.height = msg.Height
 
@@ -80,12 +110,40 @@ func (w *ViewportWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			w.height = w.config.MinHeight
 		}
 
-		// Calculate layout
+		// Calculate layout and set viewport dimensions
 		w.calculateLayout()
 		logger.Log("ViewportWrapper.Update: calculated layout, viewport=%dx%d", w.viewport.Width, w.viewport.Height)
 
-		// Sync viewport
+		// Sync viewport with new dimensions
 		if w.config.UseViewport {
+			// Ensure viewport has valid dimensions before updating
+			if w.viewport.Width == 0 || w.viewport.Height == 0 {
+				logger.Log("ViewportWrapper.Update: viewport has invalid dimensions after calculateLayout, fixing...")
+				// Recalculate with fallback defaults if needed
+				if w.viewport.Width == 0 {
+					w.viewport.Width = w.width
+					if w.viewport.Width == 0 {
+						w.viewport.Width = 80 // Fallback to default
+					}
+				}
+				if w.viewport.Height == 0 {
+					headerH := w.config.HeaderHeight
+					if headerH == 0 && w.config.ShowHeader {
+						headerH = 2
+					}
+					footerH := w.config.FooterHeight
+					if footerH == 0 && w.config.ShowFooter {
+						footerH = 1
+					}
+					w.viewport.Height = w.height - headerH - footerH
+					if w.viewport.Height < 1 {
+						w.viewport.Height = 1
+					}
+				}
+				logger.Log("ViewportWrapper.Update: fixed viewport dimensions to %dx%d", w.viewport.Width, w.viewport.Height)
+			}
+
+			// Update viewport with new dimensions
 			var vpCmd tea.Cmd
 			w.viewport, vpCmd = w.viewport.Update(msg)
 			// Forward window size to wrapped model (it may need size info)
@@ -117,6 +175,7 @@ func (w *ViewportWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if w.showHelp && w.config.HelpContent != nil {
 					w.helpContent = w.config.HelpContent()
 				}
+				// Help toggle doesn't affect header/footer height, so no need to mark dirty
 				return w, nil
 			}
 		case "m":
@@ -173,19 +232,39 @@ func (w *ViewportWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		logger.Log("ViewportWrapper.Update: WARNING - wrapped model is nil")
 	}
 
-	// If using viewport, also pass messages for scrolling
-	// Note: This may intercept navigation keys. The viewport should only scroll when content exceeds height.
-	// If there are conflicts, we may need to conditionally enable viewport or use different keys.
+	// Automatic scrolling: if model implements SelectableModel and selection changed,
+	// scroll viewport to keep selected item visible
+	if w.config.UseViewport && w.model != nil {
+		if selectable, ok := w.model.(SelectableModel); ok {
+			currentSelected := selectable.GetSelectedIndex()
+			if currentSelected != w.prevSelectedIndex {
+				logger.Log("ViewportWrapper.Update: selection changed from %d to %d, scrolling to keep visible",
+					w.prevSelectedIndex, currentSelected)
+				w.scrollToSelected(selectable, currentSelected)
+				w.prevSelectedIndex = currentSelected
+			}
+		}
+	}
+
+	// If using viewport, only forward scrolling keys to prevent intercepting navigation keys
+	// This ensures viewport only handles scrolling when appropriate, allowing wrapped models
+	// to handle navigation keys (j/k, enter, etc.) without interference
 	if w.config.UseViewport {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			logger.Log("ViewportWrapper.Update: passing key %q to viewport", keyMsg.String())
+		// Only forward scrolling keys to viewport
+		// This prevents viewport from intercepting navigation keys when scrolling isn't needed
+		if isScrollingKey(msg) {
+			if keyMsg, ok := msg.(tea.KeyMsg); ok {
+				logger.Log("ViewportWrapper.Update: forwarding scrolling key %q to viewport", keyMsg.String())
+			}
+			var vpCmd tea.Cmd
+			w.viewport, vpCmd = w.viewport.Update(msg)
+			if vpCmd != nil {
+				logger.Log("ViewportWrapper.Update: viewport returned a command")
+			}
+			cmd = tea.Batch(cmd, vpCmd)
+		} else if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			logger.Log("ViewportWrapper.Update: key %q is not a scrolling key, skipping viewport", keyMsg.String())
 		}
-		var vpCmd tea.Cmd
-		w.viewport, vpCmd = w.viewport.Update(msg)
-		if vpCmd != nil {
-			logger.Log("ViewportWrapper.Update: viewport returned a command")
-		}
-		cmd = tea.Batch(cmd, vpCmd)
 	}
 
 	return w, cmd
@@ -220,41 +299,30 @@ func (w *ViewportWrapper) View() string {
 
 	// Apply viewport if enabled
 	if w.config.UseViewport {
-		// Ensure layout is calculated before using viewport
-		// Always recalculate to ensure dimensions are up-to-date
-		w.calculateLayout()
+		// Ensure viewport has valid dimensions (should be set in Update, but check as safety)
+		if w.viewport.Width == 0 || w.viewport.Height == 0 {
+			logger.Log("ViewportWrapper.View: viewport has invalid dimensions, recalculating...")
+			w.calculateLayout()
+		}
+
 		logger.Log("ViewportWrapper.View: applying viewport, viewport size=%dx%d, wrapper size=%dx%d, content length=%d",
 			w.viewport.Width, w.viewport.Height, w.width, w.height, len(content))
 
-		// If viewport still has invalid dimensions, use wrapper dimensions directly
-		if w.viewport.Width == 0 || w.viewport.Height == 0 {
-			logger.Log("ViewportWrapper.View: viewport has invalid dimensions, fixing...")
-			if w.viewport.Width == 0 {
-				w.viewport.Width = w.width
-				if w.viewport.Width == 0 {
-					w.viewport.Width = 80 // Fallback to default
-				}
-			}
-			if w.viewport.Height == 0 {
-				headerH := 2
-				footerH := 1
-				w.viewport.Height = w.height - headerH - footerH
-				if w.viewport.Height < 1 {
-					w.viewport.Height = 1
-				}
-			}
-			logger.Log("ViewportWrapper.View: fixed viewport dimensions to %dx%d", w.viewport.Width, w.viewport.Height)
+		// Constrain content width to viewport width for proper measurement
+		// The viewport needs content that matches its width to properly measure height
+		contentWidth := lipgloss.Width(content)
+		if contentWidth > 0 && w.viewport.Width > 0 && contentWidth != w.viewport.Width {
+			// Content width doesn't match viewport width - wrap it
+			// This ensures viewport can properly measure content height
+			content = lipgloss.NewStyle().
+				Width(w.viewport.Width).
+				Render(content)
+			logger.Log("ViewportWrapper.View: constrained content width from %d to %d", contentWidth, w.viewport.Width)
 		}
 
-		// Set content and ensure viewport is synced
+		// Set content - viewport will handle scrolling
+		// Note: SetContent should be called every render cycle, which is correct here
 		w.viewport.SetContent(content)
-		// Sync the viewport to ensure it's properly initialized with the content
-		// Create a WindowSizeMsg to sync the viewport
-		syncMsg := tea.WindowSizeMsg{
-			Width:  w.viewport.Width,
-			Height: w.viewport.Height,
-		}
-		w.viewport, _ = w.viewport.Update(syncMsg)
 		content = w.viewport.View()
 		logger.Log("ViewportWrapper.View: viewport returned content, length=%d bytes", len(content))
 	}
@@ -287,15 +355,40 @@ func (w *ViewportWrapper) View() string {
 }
 
 func (w *ViewportWrapper) calculateLayout() {
+	// Calculate header height
 	headerH := w.config.HeaderHeight
 	if headerH == 0 && w.config.ShowHeader {
-		headerH = 2 // Default header height
+		// Use cached height if available and not dirty
+		if !w.headerFooterDirty && w.cachedHeaderHeight > 0 {
+			headerH = w.cachedHeaderHeight
+			logger.Log("ViewportWrapper.calculateLayout: using cached header height: %d", headerH)
+		} else {
+			// Measure actual header height dynamically
+			header := w.renderHeader()
+			headerH = lipgloss.Height(header)
+			w.cachedHeaderHeight = headerH
+			logger.Log("ViewportWrapper.calculateLayout: measured header height: %d", headerH)
+		}
 	}
 
+	// Calculate footer height
 	footerH := w.config.FooterHeight
 	if footerH == 0 && w.config.ShowFooter {
-		footerH = 1 // Default footer height
+		// Use cached height if available and not dirty
+		if !w.headerFooterDirty && w.cachedFooterHeight > 0 {
+			footerH = w.cachedFooterHeight
+			logger.Log("ViewportWrapper.calculateLayout: using cached footer height: %d", footerH)
+		} else {
+			// Measure actual footer height dynamically
+			footer := w.renderFooter()
+			footerH = lipgloss.Height(footer)
+			w.cachedFooterHeight = footerH
+			logger.Log("ViewportWrapper.calculateLayout: measured footer height: %d", footerH)
+		}
 	}
+
+	// Mark as clean after measurement
+	w.headerFooterDirty = false
 
 	contentH := w.height - headerH - footerH
 	if contentH < 1 {
@@ -395,4 +488,102 @@ func (w *ViewportWrapper) renderHelpOverlay() string {
 	return overlayStyle.Render(
 		lipgloss.JoinVertical(lipgloss.Left, title, "", content, "", closeHint),
 	)
+}
+
+// scrollToSelected calculates the position of the selected item and scrolls the viewport
+// to keep it visible. This implements automatic scrolling when navigation keys change selection.
+func (w *ViewportWrapper) scrollToSelected(selectable SelectableModel, selectedIndex int) {
+	if selectedIndex < 0 {
+		// No selection, nothing to scroll to
+		return
+	}
+
+	// Get item dimensions from the model
+	itemHeight := selectable.GetItemHeight()
+	if itemHeight <= 0 {
+		itemHeight = 1 // Default to 1 line per item
+	}
+	listHeaderHeight := selectable.GetListHeaderHeight()
+	if listHeaderHeight < 0 {
+		listHeaderHeight = 0
+	}
+
+	// Calculate the Y position of the selected item in the content
+	// Position = header lines + (selected index * item height)
+	selectedY := listHeaderHeight + (selectedIndex * itemHeight)
+
+	// Get current viewport scroll position and height
+	currentYOffset := w.viewport.YOffset
+	viewportHeight := w.viewport.Height
+
+	if viewportHeight <= 0 {
+		// Viewport not initialized yet, can't scroll
+		logger.Log("ViewportWrapper.scrollToSelected: viewport height is 0, skipping scroll")
+		return
+	}
+
+	// Check if selected item is already visible
+	// Item is visible if: currentYOffset <= selectedY < currentYOffset + viewportHeight
+	// But we want the item to be fully visible, so we check if the item's bottom is visible
+	itemBottomY := selectedY + itemHeight
+	viewportBottom := currentYOffset + viewportHeight
+
+	isVisible := selectedY >= currentYOffset && itemBottomY <= viewportBottom
+
+	if !isVisible {
+		// Item is not visible, need to scroll
+		if selectedY < currentYOffset {
+			// Item is above visible area, scroll up to show it
+			newOffset := selectedY
+			// Add some padding: show a few items above if possible
+			if newOffset > 2 {
+				newOffset -= 2
+			}
+			w.viewport.SetYOffset(newOffset)
+			logger.Log("ViewportWrapper.scrollToSelected: scrolled up, new offset=%d (selected at %d)",
+				newOffset, selectedY)
+		} else {
+			// Item is below visible area, scroll down to show it
+			// Position item near the bottom of viewport with some padding
+			newOffset := selectedY - viewportHeight + itemHeight + 2
+			if newOffset < 0 {
+				newOffset = 0
+			}
+			w.viewport.SetYOffset(newOffset)
+			logger.Log("ViewportWrapper.scrollToSelected: scrolled down, new offset=%d (selected at %d)",
+				newOffset, selectedY)
+		}
+	} else {
+		logger.Log("ViewportWrapper.scrollToSelected: item already visible at Y=%d (offset=%d, height=%d)",
+			selectedY, currentYOffset, viewportHeight)
+	}
+}
+
+// isScrollingKey checks if a message is a key that should be handled by the viewport for scrolling.
+// This prevents the viewport from intercepting navigation keys (j/k, enter, etc.) used by wrapped models.
+func isScrollingKey(msg tea.Msg) bool {
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return false
+	}
+
+	key := keyMsg.String()
+	switch key {
+	case "up", "down", "pgup", "pgdown", "home", "end":
+		// Standard scrolling keys
+		return true
+	case "ctrl+u", "ctrl+d":
+		// Half-page scrolling
+		return true
+	case "ctrl+b", "ctrl+f":
+		// Page scrolling (alternative)
+		return true
+	case " ", "shift+space":
+		// Space for page down, shift+space for page up
+		return true
+	default:
+		// All other keys (including j/k, enter, etc.) are not scrolling keys
+		// This allows wrapped models to handle navigation without interference
+		return false
+	}
 }
