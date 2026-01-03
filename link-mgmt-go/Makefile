@@ -22,9 +22,6 @@ run-api: ## Run the API server
 run-cli: ## Run the CLI
 	go run ./cmd/cli
 
-test: ## Run tests
-	go test ./...
-
 deps: ## Install dependencies
 	go mod download
 	go mod tidy

@@ -42,9 +42,14 @@ type LinkListItem struct {
 }
 
 // renderLinkList renders a selectable list of links with navigation markers
-func renderLinkList(links []models.Link, selected int, title string, subtitle string) string {
+// maxWidth is used for URL truncation to ensure content fits the viewport
+func renderLinkList(links []models.Link, selected int, title string, subtitle string, maxWidth int) string {
 	if len(links) == 0 {
 		return renderEmptyState("No links found.")
+	}
+
+	if maxWidth == 0 {
+		maxWidth = 80 // Default fallback
 	}
 
 	var b strings.Builder
@@ -63,7 +68,12 @@ func renderLinkList(links []models.Link, selected int, title string, subtitle st
 		}
 
 		title := formatLinkTitle(link)
-		url := truncateURL(link.URL, 60)
+		// Use maxWidth for URL truncation, but leave some margin for formatting
+		urlTruncateWidth := maxWidth - 4
+		if urlTruncateWidth < 40 {
+			urlTruncateWidth = 40 // Minimum
+		}
+		url := truncateURL(link.URL, urlTruncateWidth)
 
 		var titleStyle lipgloss.Style
 		if i == selected {
@@ -132,9 +142,14 @@ func renderLinkDetails(link *models.Link, includeUserID bool) string {
 }
 
 // renderLinkDetailsFull renders all link details including description and text
-func renderLinkDetailsFull(link *models.Link) string {
+// maxWidth is used for text wrapping to ensure content fits the viewport
+func renderLinkDetailsFull(link *models.Link, maxWidth int) string {
 	if link == nil {
 		return ""
+	}
+
+	if maxWidth == 0 {
+		maxWidth = 80 // Default fallback
 	}
 
 	var b strings.Builder
@@ -144,7 +159,12 @@ func renderLinkDetailsFull(link *models.Link) string {
 	b.WriteString(fieldLabelStyle.Render("Description:"))
 	if link.Description != nil && *link.Description != "" {
 		desc := *link.Description
-		b.WriteString(wrapText(desc, 80, " "))
+		// Use maxWidth for wrapping, but leave some margin for field label
+		wrapWidth := maxWidth - 2
+		if wrapWidth < 40 {
+			wrapWidth = 40 // Minimum
+		}
+		b.WriteString(wrapText(desc, wrapWidth, " "))
 	} else {
 		b.WriteString(" " + mutedStyle.Render("(not set)") + "\n")
 	}
@@ -153,6 +173,10 @@ func renderLinkDetailsFull(link *models.Link) string {
 	b.WriteString(fieldLabelStyle.Render("Text:"))
 	if link.Text != nil && *link.Text != "" {
 		text := *link.Text
+		wrapWidth := maxWidth - 2
+		if wrapWidth < 40 {
+			wrapWidth = 40 // Minimum
+		}
 		if len(text) > 500 {
 			preview := text[:500]
 			if lastSpace := strings.LastIndex(preview, " "); lastSpace > 400 {
@@ -161,7 +185,7 @@ func renderLinkDetailsFull(link *models.Link) string {
 			b.WriteString(fmt.Sprintf(" %s...\n", preview))
 			b.WriteString(fmt.Sprintf("  %s\n", mutedStyle.Render(fmt.Sprintf("(truncated, full length: %d characters)", len(text)))))
 		} else {
-			b.WriteString(wrapText(text, 80, " "))
+			b.WriteString(wrapText(text, wrapWidth, " "))
 		}
 	} else {
 		b.WriteString(" " + mutedStyle.Render("(not set)") + "\n")
