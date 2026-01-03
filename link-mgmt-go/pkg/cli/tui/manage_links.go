@@ -57,6 +57,8 @@ const (
 	manageStepDone
 )
 
+const defaultWidth = 80 // Default terminal width fallback
+
 // manageLinksLoadedMsg is emitted when links have been fetched.
 type manageLinksLoadedMsg struct {
 	links []models.Link
@@ -130,7 +132,6 @@ func NewManageLinksModel(
 		MinHeight: 10,
 	})
 }
-
 func (m *manageLinksModel) Init() tea.Cmd {
 	return func() tea.Msg {
 		links, err := m.client.ListLinks()
@@ -153,7 +154,7 @@ func (m *manageLinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Store width for rendering - this allows us to render content that fits the viewport
 		m.width = msg.Width
 		if m.width == 0 {
-			m.width = 80 // Default fallback
+			m.width = defaultWidth
 		}
 		logger.Log("manageLinksModel.Update: received WindowSizeMsg, width=%d", m.width)
 		return m, nil
@@ -397,6 +398,14 @@ func (m *manageLinksModel) View() string {
 	return result
 }
 
+// getMaxWidth returns the maximum width for rendering, using defaultWidth as fallback
+func (m *manageLinksModel) getMaxWidth() int {
+	if m.width > 0 {
+		return m.width
+	}
+	return defaultWidth
+}
+
 // GetSelectedIndex implements SelectableModel interface for automatic viewport scrolling
 func (m *manageLinksModel) GetSelectedIndex() int {
 	// Only return selection when in list view step
@@ -434,10 +443,7 @@ func (m *manageLinksModel) renderList() string {
 	}
 
 	// Use stored width for rendering, with fallback
-	maxWidth := m.width
-	if maxWidth == 0 {
-		maxWidth = 80
-	}
+	maxWidth := m.getMaxWidth()
 
 	// Title is rendered by the viewport wrapper header
 	s := renderLinkList(m.links, m.selected, "", "Select a link:", maxWidth)
@@ -453,10 +459,7 @@ func (m *manageLinksModel) renderActionMenu() string {
 	}
 
 	// Use stored width for rendering, with fallback
-	maxWidth := m.width
-	if maxWidth == 0 {
-		maxWidth = 80
-	}
+	maxWidth := m.getMaxWidth()
 
 	link := m.links[m.selected]
 	title := formatLinkTitle(link)
@@ -492,10 +495,7 @@ func (m *manageLinksModel) renderViewDetails() string {
 	}
 
 	// Use stored width for rendering, with fallback
-	maxWidth := m.width
-	if maxWidth == 0 {
-		maxWidth = 80
-	}
+	maxWidth := m.getMaxWidth()
 
 	link := m.links[m.selected]
 	var b strings.Builder
@@ -518,10 +518,7 @@ func (m *manageLinksModel) renderDeleteConfirm() string {
 	}
 
 	// Use stored width for rendering, with fallback
-	maxWidth := m.width
-	if maxWidth == 0 {
-		maxWidth = 80
-	}
+	maxWidth := m.getMaxWidth()
 
 	link := m.links[m.selected]
 	title := formatLinkTitle(link)
