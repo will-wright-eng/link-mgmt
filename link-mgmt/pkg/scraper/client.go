@@ -154,32 +154,51 @@ func (s *ScraperService) ScrapeWithProgress(ctx context.Context, url string, tim
 		return nil, newNetworkError(fmt.Errorf("failed to read response: %w", err))
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		// Try to parse error response
-		var errorResp struct {
-			Error string `json:"error"`
-		}
-		if json.Unmarshal(body, &errorResp) == nil && errorResp.Error != "" {
-			return nil, newExtractionError(errorResp.Error)
-		}
-		return nil, newInvalidResponseError(
-			fmt.Sprintf("scraper service error (status %d)", resp.StatusCode),
-			fmt.Errorf("response: %s", string(body)),
-		)
-	}
-
+	// Parse response regardless of status code to get error categorization
 	var result ScrapeResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, newInvalidResponseError("failed to decode response", err)
 	}
 
-	// If the response indicates failure, return an extraction error
-	if !result.Success {
+	// If the response indicates failure, create a categorized error
+	if !result.Success || resp.StatusCode != http.StatusOK {
 		errorMsg := result.Error
 		if errorMsg == "" {
-			errorMsg = "Failed to extract content"
+			errorMsg = "Failed to scrape URL"
 		}
-		return nil, newExtractionError(errorMsg)
+
+		// Use error type from response if available, otherwise infer from status code
+		var errorType ErrorType
+		if result.ErrorType != "" {
+			errorType = MapErrorTypeFromString(result.ErrorType)
+		} else {
+			// Infer error type from HTTP status code
+			switch resp.StatusCode {
+			case http.StatusGatewayTimeout, http.StatusRequestTimeout:
+				errorType = ErrorTypeTimeout
+			case http.StatusServiceUnavailable, http.StatusBadGateway:
+				errorType = ErrorTypeServiceUnavailable
+			case http.StatusBadRequest:
+				errorType = ErrorTypeInvalidURL
+			case http.StatusTooManyRequests:
+				errorType = ErrorTypeRateLimit
+			case http.StatusForbidden:
+				errorType = ErrorTypeBlocked
+			default:
+				errorType = ErrorTypeExtraction
+			}
+		}
+
+		// Create the appropriate error based on type
+		cause := fmt.Errorf("%s", errorMsg)
+		scraperErr := NewScraperErrorFromType(errorType, errorMsg, cause)
+
+		// Set retryable flag from response if provided
+		if result.Retryable != nil {
+			scraperErr.SetRetryable(*result.Retryable)
+		}
+
+		return nil, scraperErr
 	}
 
 	// Stage 4: Complete

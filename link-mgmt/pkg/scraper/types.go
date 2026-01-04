@@ -11,10 +11,12 @@ type ScrapeRequest struct {
 type ScrapeResponse struct {
 	Success     bool   `json:"success"`
 	URL         string `json:"url"`
-	Title       string `json:"title"`
-	Text        string `json:"text"`
-	ExtractedAt string `json:"extracted_at"`
+	Title       string `json:"title,omitempty"`
+	Text        string `json:"text,omitempty"`
+	ExtractedAt string `json:"extracted_at,omitempty"`
 	Error       string `json:"error,omitempty"`
+	ErrorType   string `json:"error_type,omitempty"` // Categorized error type from scraper service
+	Retryable   *bool  `json:"retryable,omitempty"`  // Whether the error is retryable (pointer for optional field)
 }
 
 // ScrapeStage represents the current stage of a scraping operation
