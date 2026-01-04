@@ -13,9 +13,9 @@ This document details the integration of the scraper service into the Go CLI app
 **Prerequisites**:
 
 - ✅ Scraper HTTP service implemented (`scraper/src/server.ts`)
-- ✅ Go scraper client implemented (`link-mgmt-go/pkg/scraper/client.go`)
-- ✅ CLI add link form implemented (`link-mgmt-go/pkg/cli/app.go`)
-- ✅ API client implemented (`link-mgmt-go/pkg/cli/client/`)
+- ✅ Go scraper client implemented (`link-mgmt/pkg/scraper/client.go`)
+- ✅ CLI add link form implemented (`link-mgmt/pkg/cli/app.go`)
+- ✅ API client implemented (`link-mgmt/pkg/cli/client/`)
 - ✅ Nginx reverse proxy configured (`nginx/nginx.conf`, `docker-compose.yml`)
 - ✅ Configuration updated with `BaseURL` and `ScrapeTimeout` (`pkg/config/config.go`)
 
@@ -336,7 +336,7 @@ The `docker-compose.yml` orchestrates all services with the following structure:
 
 ### 1. Configuration ✅ COMPLETE
 
-**File**: `link-mgmt-go/pkg/config/config.go`
+**File**: `link-mgmt/pkg/config/config.go`
 
 **Status**: ✅ Already implemented
 
@@ -347,7 +347,7 @@ The `docker-compose.yml` orchestrates all services with the following structure:
 
 ### 2. Add Scrape Command Handler ✅ COMPLETE
 
-**File**: `link-mgmt-go/pkg/cli/app.go`
+**File**: `link-mgmt/pkg/cli/app.go`
 
 **Status**: ✅ Implemented
 
@@ -363,7 +363,7 @@ The `docker-compose.yml` orchestrates all services with the following structure:
 
 ### 3. Update Command Line Parsing ✅ COMPLETE
 
-**File**: `link-mgmt-go/cmd/cli/main.go`
+**File**: `link-mgmt/cmd/cli/main.go`
 
 **Status**: ✅ Implemented
 
@@ -376,7 +376,7 @@ The `docker-compose.yml` orchestrates all services with the following structure:
 
 ### 4. Add Link Form Remains Unchanged
 
-**File**: `link-mgmt-go/pkg/cli/app.go` (no changes to `addLinkForm`)
+**File**: `link-mgmt/pkg/cli/app.go` (no changes to `addLinkForm`)
 
 **Note**: The `addLinkForm` does not need any scraping-related changes. It remains a simple form for manual entry of URL, title, description, and text.
 
@@ -435,7 +435,7 @@ The `docker-compose.yml` orchestrates all services with the following structure:
    - ✅ Route to scrape command handler
    - ✅ Validate base URL configuration
 
-3. **Already implemented**:
+4. **Already implemented**:
    - ✅ `pkg/scraper/client.go` - Scraper HTTP client with nginx routing support
    - ✅ `pkg/cli/client/` - API HTTP client
    - ✅ `nginx/nginx.conf` - Reverse proxy routing configuration
@@ -621,8 +621,8 @@ The `docker-compose.yml` orchestrates all services with the following structure:
 
 ### Existing Dependencies
 
-- ✅ `link-mgmt-go/pkg/scraper/client.go` - Scraper HTTP client (uses nginx routing)
-- ✅ `link-mgmt-go/pkg/cli/client/` - API HTTP client (uses nginx routing)
+- ✅ `link-mgmt/pkg/scraper/client.go` - Scraper HTTP client (uses nginx routing)
+- ✅ `link-mgmt/pkg/cli/client/` - API HTTP client (uses nginx routing)
 - ✅ `nginx/nginx.conf` - Reverse proxy configuration
 - ✅ `docker-compose.yml` - Service orchestration with nginx
 - ✅ Bubble Tea - TUI framework (already in use)

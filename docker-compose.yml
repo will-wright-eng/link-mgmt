@@ -14,7 +14,7 @@ services:
   # Development API service (with hot reloading)
   api-dev:
     build:
-      context: ./link-mgmt-go
+      context: ./link-mgmt
       dockerfile: Dockerfile
     container_name: link-mgmt-api-dev
     restart: unless-stopped
@@ -26,7 +26,7 @@ services:
       - SCRAPER_BASE_URL=http://scraper-dev:3000
     volumes:
       # Mount source code for hot reloading (writable so Air can create tmp files)
-      - ./link-mgmt-go:/app
+      - ./link-mgmt:/app
       # Exclude tmp and bin directories from volume mount to avoid conflicts
       - /app/tmp
       - /app/bin

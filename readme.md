@@ -48,7 +48,7 @@ graph TB
 
 ## Components
 
-### CLI Application (`link-mgmt-go/cmd/cli`)
+### CLI Application (`link-mgmt/cmd/cli`)
 
 - **Language**: Go
 - **Framework**: Bubble Tea (TUI)
@@ -59,7 +59,7 @@ graph TB
     - Configuration management
     - Form-based link creation with auto-filled content
 
-### API Server (`link-mgmt-go/cmd/api`)
+### API Server (`link-mgmt/cmd/api`)
 
 - **Language**: Go
 - **Framework**: Standard library HTTP
@@ -134,7 +134,7 @@ url = "postgres://link_mgmt_user:link_mgmt_pwd@localhost:5432/link_mgmt_db?sslmo
 Run the following command to register a CLI user and start saving links:
 
 ```bash
-cd link-mgmt-go
+cd link-mgmt
 go run ./cmd/cli --register "me@$(whoami).com"
 ```
 
@@ -142,15 +142,15 @@ go run ./cmd/cli --register "me@$(whoami).com"
 
 ```bash
 # Using psql
-PGPASSWORD=link_mgmt_pwd psql -h localhost -U link_mgmt_user -d link_mgmt_db -f link-mgmt-go/migrations/001_create_users.sql
-PGPASSWORD=link_mgmt_pwd psql -h localhost -U link_mgmt_user -d link_mgmt_db -f link-mgmt-go/migrations/002_create_links.sql
+PGPASSWORD=link_mgmt_pwd psql -h localhost -U link_mgmt_user -d link_mgmt_db -f link-mgmt/migrations/001_create_users.sql
+PGPASSWORD=link_mgmt_pwd psql -h localhost -U link_mgmt_user -d link_mgmt_db -f link-mgmt/migrations/002_create_links.sql
 ```
 
 ### Use the CLI
 
 ```bash
 # Build CLI
-cd link-mgmt-go
+cd link-mgmt
 go build -o bin/cli ./cmd/cli
 
 # View configuration
@@ -183,7 +183,7 @@ All services are accessed through nginx on port 80:
 **API Server:**
 
 ```bash
-cd link-mgmt-go
+cd link-mgmt
 go run ./cmd/api
 ```
 
@@ -197,7 +197,7 @@ bun run dev
 **CLI:**
 
 ```bash
-cd link-mgmt-go
+cd link-mgmt
 go run ./cmd/cli --add
 ```
 
@@ -212,7 +212,7 @@ The dev profile includes hot reloading:
 
 ```bash
 link-mgmt/
-├── link-mgmt-go/          # Go API and CLI
+├── link-mgmt/          # Go API and CLI
 │   ├── cmd/
 │   │   ├── api/          # API server entry point
 │   │   └── cli/          # CLI entry point

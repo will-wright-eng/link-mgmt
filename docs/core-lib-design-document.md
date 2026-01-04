@@ -46,7 +46,7 @@ Based on the language comparison analysis, Go was selected for its:
 Following Go conventions for multi-binary projects:
 
 ```
-link-mgmt-go/
+link-mgmt/
 ├── cmd/
 │   ├── api/
 │   │   └── main.go              # ✅ API server entry point
@@ -100,12 +100,12 @@ Both `cmd/api` and `cmd/cli` import from `pkg/`:
 
 ```go
 // cmd/api/main.go
-import "link-mgmt-go/pkg/db"
-import "link-mgmt-go/pkg/models"
+import "link-mgmt/pkg/db"
+import "link-mgmt/pkg/models"
 
 // cmd/cli/main.go
-import "link-mgmt-go/pkg/db"
-import "link-mgmt-go/pkg/models"
+import "link-mgmt/pkg/db"
+import "link-mgmt/pkg/models"
 ```
 
 ### 2. Separation of Concerns
@@ -222,9 +222,9 @@ type User struct {
 package cli
 
 import (
-    "link-mgmt-go/pkg/cli/models"
-    "link-mgmt-go/pkg/config"
-    "link-mgmt-go/pkg/db"
+    "link-mgmt/pkg/cli/models"
+    "link-mgmt/pkg/config"
+    "link-mgmt/pkg/db"
 
     tea "github.com/charmbracelet/bubbletea"
 )
@@ -274,9 +274,9 @@ package models
 import (
     "context"
     "fmt"
-    "link-mgmt-go/pkg/config"
-    "link-mgmt-go/pkg/db"
-    "link-mgmt-go/pkg/models"
+    "link-mgmt/pkg/config"
+    "link-mgmt/pkg/db"
+    "link-mgmt/pkg/models"
 
     "github.com/charmbracelet/bubbles/key"
     "github.com/charmbracelet/bubbles/list"
@@ -497,7 +497,7 @@ ENTRYPOINT ["/api"]
 
 ```bash
 # Initialize Go module
-go mod init link-mgmt-go
+go mod init link-mgmt
 
 # Install dependencies
 go get github.com/gin-gonic/gin

@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -10,7 +10,7 @@ repos:
         exclude: tsconfig\.json$
 
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.45.0
+    rev: v0.47.0
     hooks:
     - id: markdownlint
       args:
@@ -28,9 +28,9 @@ repos:
         pass_filenames: false
       - id: golangci-lint
         name: golangci-lint
-        entry: bash -c 'cd link-mgmt-go && golangci-lint run --timeout=5m ./...'
+        entry: bash -c 'cd link-mgmt && golangci-lint run --timeout=5m ./...'
         language: system
-        files: ^link-mgmt-go/.*\.go$
+        files: ^link-mgmt/.*\.go$
         pass_filenames: false
       - id: prettier-typescript
         name: Prettier TypeScript
@@ -40,7 +40,7 @@ repos:
         pass_filenames: false
       - id: go-fmt
         name: Go Format
-        entry: bash -c 'cd link-mgmt-go && go fmt ./...'
+        entry: bash -c 'cd link-mgmt && go fmt ./...'
         language: system
-        files: ^link-mgmt-go/.*\.go$
+        files: ^link-mgmt/.*\.go$
         pass_filenames: false

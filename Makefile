@@ -14,8 +14,8 @@ help: ## list make commands
 	@echo "Scraper commands (scraper/):"
 	@$(MAKE) -C scraper help 2>/dev/null | grep -v "^make" || true
 	@echo ""
-	@echo "Go commands (link-mgmt-go/):"
-	@$(MAKE) -C link-mgmt-go help 2>/dev/null | grep -v "^make" || true
+	@echo "Go commands (link-mgmt/):"
+	@$(MAKE) -C link-mgmt help 2>/dev/null | grep -v "^make" || true
 
 # utils
 clean: ## Clean up
@@ -62,13 +62,13 @@ postgres-down: ## [db] Stop PostgreSQL database
 
 migrate: ## [db] Run database migrations via Docker
 	@echo "Running migrations via Docker..."
-	@docker compose exec -T postgres psql -U link_mgmt_user -d link_mgmt_db < link-mgmt-go/migrations/001_create_users.sql
-	@docker compose exec -T postgres psql -U link_mgmt_user -d link_mgmt_db < link-mgmt-go/migrations/002_create_links.sql
+	@docker compose exec -T postgres psql -U link_mgmt_user -d link_mgmt_db < link-mgmt/migrations/001_create_users.sql
+	@docker compose exec -T postgres psql -U link_mgmt_user -d link_mgmt_db < link-mgmt/migrations/002_create_links.sql
 	@echo "✓ Migrations completed"
 
 # Go delegation
 go-build-api go-build-cli go-build-all go-run-api go-run-cli go-test go-deps:
-	$(MAKE) -C link-mgmt-go $@
+	$(MAKE) -C link-mgmt $@
 
 # Scraper delegation
 scraper scraper-check scraper-fmt scraper-fmt-check:
