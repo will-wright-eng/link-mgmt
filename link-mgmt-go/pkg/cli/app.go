@@ -9,13 +9,11 @@ import (
 	"link-mgmt-go/pkg/cli/tui"
 	"link-mgmt-go/pkg/config"
 	"link-mgmt-go/pkg/models"
-	"link-mgmt-go/pkg/scraper"
 )
 
 type App struct {
-	cfg            *config.Config
-	client         *client.Client
-	scraperService *scraper.ScraperService
+	cfg    *config.Config
+	client *client.Client
 }
 
 func NewApp(cfg *config.Config) *App {
@@ -50,21 +48,6 @@ func (a *App) getClientForRegistration() (*client.Client, error) {
 	return client.NewClient(a.cfg.CLI.BaseURL, ""), nil
 }
 
-// getScraperService returns the scraper service, creating it if necessary
-func (a *App) getScraperService() (*scraper.ScraperService, error) {
-	if a.scraperService != nil {
-		return a.scraperService, nil
-	}
-
-	if a.cfg.CLI.BaseURL == "" {
-		return nil, fmt.Errorf("base URL not configured (set cli.base_url)")
-	}
-
-	// Use same base URL as API (nginx routes /scrape to scraper service)
-	a.scraperService = scraper.NewScraperService(a.cfg.CLI.BaseURL)
-	return a.scraperService, nil
-}
-
 // SaveLink saves a link to the API
 func (a *App) SaveLink(url string) error {
 	apiClient, err := a.getClient()
@@ -97,14 +80,8 @@ func (a *App) Run() error {
 		return err
 	}
 
-	scraperService, err := a.getScraperService()
-	if err != nil {
-		return err
-	}
-
-	// In interactive mode, start the root app-shell model which can launch
-	// multiple flows (add basic, add with scraping, delete, etc.).
-	model := tui.NewRootModel(apiClient, scraperService, a.cfg.CLI.ScrapeTimeout)
+	// No scraper service needed - API handles it
+	model := tui.NewRootModel(apiClient, a.cfg.CLI.ScrapeTimeout)
 	p := tea.NewProgram(model)
 	_, err = p.Run()
 	return err

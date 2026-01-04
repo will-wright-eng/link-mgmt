@@ -6,9 +6,8 @@ const (
 	StepActionMenu
 	StepViewDetails
 	StepDeleteConfirm
-	StepScraping
-	StepScrapeSaving
-	StepScrapeDone
+	StepEnriching
+	StepEnrichDone
 	StepDone
 )
 

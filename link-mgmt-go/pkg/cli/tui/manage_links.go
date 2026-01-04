@@ -1,38 +1,37 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"link-mgmt-go/pkg/cli/client"
 	"link-mgmt-go/pkg/cli/logger"
 	"link-mgmt-go/pkg/cli/tui/managelinks"
 	"link-mgmt-go/pkg/models"
-	"link-mgmt-go/pkg/scraper"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // manageLinksModel is a combined Bubble Tea model that allows listing, viewing,
-// deleting, and scraping links in a single unified flow.
+// deleting, and enriching links in a single unified flow.
 type manageLinksModel struct {
-	client         *client.Client
-	scraperService *scraper.ScraperService
+	client *client.Client
 
 	links    []models.Link
 	selected int
-	step     int // 0=list, 1=action menu, 2=view details, 3=delete confirm, 4=scraping, 5=scrape saving, 6=scrape done, 7=done
+	step     int // 0=list, 1=action menu, 2=view details, 3=delete confirm, 4=enriching, 5=enrich done, 6=done
 	err      error
 	ready    bool
 
 	// For delete confirmation
 	confirm textinput.Model
 
-	// Scraping state
-	scrapeState managelinks.ScrapeState
+	// Enrichment result
+	enrichedLink *models.Link
+
+	// Config
+	scrapeTimeoutSeconds int
 
 	// Viewport dimensions for proper rendering
 	width int
@@ -41,7 +40,6 @@ type manageLinksModel struct {
 // NewManageLinksModel creates a new combined manage links flow.
 func NewManageLinksModel(
 	c *client.Client,
-	scraperService *scraper.ScraperService,
 	timeoutSeconds int,
 ) tea.Model {
 	if timeoutSeconds <= 0 {
@@ -54,13 +52,10 @@ func NewManageLinksModel(
 	confirm.Width = 10
 
 	model := &manageLinksModel{
-		client:         c,
-		scraperService: scraperService,
-		step:           managelinks.StepListLinks,
-		confirm:        confirm,
-		scrapeState: managelinks.ScrapeState{
-			TimeoutSeconds: timeoutSeconds,
-		},
+		client:               c,
+		step:                 managelinks.StepListLinks,
+		confirm:              confirm,
+		scrapeTimeoutSeconds: timeoutSeconds,
 	}
 
 	// Wrap with viewport (enable scrolling for long lists)
@@ -132,52 +127,18 @@ func (m *manageLinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return managelinks.LinksLoadedMsg{Links: links, Err: err}
 		}
 
-	case managelinks.ScrapeDoneMsg:
-		m.scrapeState.Scraping = false
-		if msg.Err != nil {
-			m.scrapeState.Error = userFacingError(msg.Err)
-			m.step = managelinks.StepScrapeDone
-			return m, nil
-		}
-		m.scrapeState.Result = msg.Result
-		m.scrapeState.Error = nil
-		m.step = managelinks.StepScrapeSaving
-		return m, m.saveEnrichedLink()
-
-	case managelinks.EnrichSavedMsg:
-		if msg.Err != nil {
-			m.err = userFacingError(msg.Err)
-			m.step = managelinks.StepScrapeDone
-			return m, nil
-		}
-		m.scrapeState.Updated = msg.Link
-		m.step = managelinks.StepScrapeDone
+	case managelinks.EnrichSuccessMsg:
+		m.enrichedLink = msg.Link
+		m.step = managelinks.StepEnrichDone
 		// Reload links after enrichment
 		return m, func() tea.Msg {
 			links, err := m.client.ListLinks()
 			return managelinks.LinksLoadedMsg{Links: links, Err: err}
 		}
 
-	case managelinks.ScrapeProgressMsg:
-		m.scrapeState.Stage = msg.Stage
-		m.scrapeState.Message = msg.Message
-		// Continue watching progress if still scraping
-		if m.scrapeState.Scraping {
-			return m, m.watchProgress()
-		}
-		return m, nil
-
-	case managelinks.ProgressTickMsg:
-		// Continue watching for progress if still scraping
-		if m.scrapeState.Scraping && !msg.Done {
-			// Schedule another check soon
-			return m, tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
-				// Call watchProgress command and return its message
-				cmd := m.watchProgress()
-				return cmd()
-			})
-		}
-		// If done or not scraping, stop watching
+	case managelinks.EnrichErrorMsg:
+		m.err = userFacingError(msg.Err)
+		m.step = managelinks.StepEnrichDone
 		return m, nil
 
 	case tea.KeyMsg:
@@ -192,17 +153,15 @@ func (m *manageLinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleViewDetailsKeys(msg)
 		case managelinks.StepDeleteConfirm:
 			return m.handleDeleteConfirmKeys(msg)
-		case managelinks.StepScraping:
+		case managelinks.StepEnriching:
+			// Can't cancel enrichment (API handles it)
 			switch msg.String() {
 			case "ctrl+c", "esc":
-				if m.scrapeState.Cancel != nil {
-					m.scrapeState.Cancel()
-				}
 				m.step = managelinks.StepActionMenu
 				return m, nil
 			}
-		case managelinks.StepScrapeDone:
-			// Any key goes back to action menu after scraping
+		case managelinks.StepEnrichDone:
+			// Any key goes back to action menu after enrichment
 			m.step = managelinks.StepActionMenu
 			return m, nil
 		case managelinks.StepDone:
@@ -258,11 +217,14 @@ func (m *manageLinksModel) handleActionMenuKeys(msg tea.KeyMsg) (tea.Model, tea.
 		m.confirm.Focus()
 		return m, textinput.Blink
 	case "3", "s":
-		// Start scraping
+		// Enrich link (scraping handled by API)
 		if m.selected < 0 || m.selected >= len(m.links) {
 			return m, nil
 		}
-		return m.startScraping()
+		m.step = managelinks.StepEnriching
+		m.enrichedLink = nil
+		m.err = nil
+		return m, m.enrichLink()
 	}
 	return m, nil
 }
@@ -327,15 +289,12 @@ func (m *manageLinksModel) View() string {
 	case managelinks.StepDeleteConfirm:
 		logger.Log("View: rendering delete confirm, selected=%d", m.selected)
 		result = m.renderDeleteConfirm()
-	case managelinks.StepScraping:
-		logger.Log("View: rendering scraping, stage=%s", m.scrapeState.Stage)
-		result = m.renderScraping()
-	case managelinks.StepScrapeSaving:
-		logger.Log("View: rendering scrape saving")
-		result = "\n" + infoStyle.Render("Saving enriched content...") + "\n"
-	case managelinks.StepScrapeDone:
-		logger.Log("View: rendering scrape done, error=%v, updated=%v", m.scrapeState.Error != nil, m.scrapeState.Updated != nil)
-		result = m.renderScrapeDone()
+	case managelinks.StepEnriching:
+		logger.Log("View: rendering enriching")
+		result = "\n" + infoStyle.Render("Enriching link...") + "\n"
+	case managelinks.StepEnrichDone:
+		logger.Log("View: rendering enrich done, error=%v, enriched=%v", m.err != nil, m.enrichedLink != nil)
+		result = m.renderEnrichDone()
 	case managelinks.StepDone:
 		logger.Log("View: rendering done (deletion success)")
 		result = renderSuccessView("Link deleted successfully!")
@@ -432,9 +391,9 @@ func (m *manageLinksModel) renderActionMenu() string {
 	b.WriteString(boldStyle.Render("Choose an action:") + "\n\n")
 	b.WriteString("  " + selectedMarkerStyle.Render("1)") + " View details\n")
 	b.WriteString("  " + selectedMarkerStyle.Render("2)") + " Delete link\n")
-	b.WriteString("  " + selectedMarkerStyle.Render("3)") + " Scrape & enrich\n")
+	b.WriteString("  " + selectedMarkerStyle.Render("3)") + " Enrich link\n")
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("(Press 1/v to view, 2/d to delete, 3/s to scrape, Esc/b to go back, q to quit)") + "\n")
+	b.WriteString(helpStyle.Render("(Press 1/v to view, 2/d to delete, 3/s to enrich, Esc/b to go back, q to quit)") + "\n")
 
 	return b.String()
 }
@@ -513,137 +472,34 @@ func (m *manageLinksModel) deleteLink() tea.Cmd {
 	}
 }
 
-func (m *manageLinksModel) startScraping() (tea.Model, tea.Cmd) {
-	m.step = managelinks.StepScraping
-	m.scrapeState.Scraping = true
-	m.scrapeState.Result = nil
-	m.scrapeState.Error = nil
-	m.scrapeState.Stage = scraper.StageHealthCheck
-	m.scrapeState.Message = "Starting scrape..."
-	m.scrapeState.ProgressChan = make(chan managelinks.ScrapeProgressMsg, 10)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(m.scrapeState.TimeoutSeconds)*time.Second)
-	m.scrapeState.Ctx = ctx
-	m.scrapeState.Cancel = cancel
-
-	link := m.links[m.selected]
-	url := link.URL
-
-	return m, tea.Batch(
-		m.runScrapeCommand(ctx, url),
-		m.watchProgress(),
-	)
-}
-
-func (m *manageLinksModel) runScrapeCommand(ctx context.Context, url string) tea.Cmd {
+func (m *manageLinksModel) enrichLink() tea.Cmd {
 	return func() tea.Msg {
-		defer func() {
-			if m.scrapeState.Cancel != nil {
-				m.scrapeState.Cancel()
-			}
-		}()
-
-		// Progress callback that writes to the model's progress channel
-		cb := func(stage scraper.ScrapeStage, message string) {
-			select {
-			case m.scrapeState.ProgressChan <- managelinks.ScrapeProgressMsg{
-				Stage:   stage,
-				Message: message,
-			}:
-			case <-ctx.Done():
-				return
-			}
+		if m.selected < 0 || m.selected >= len(m.links) {
+			return managelinks.EnrichErrorMsg{Err: fmt.Errorf("invalid selection")}
 		}
 
-		// Run scrape (this blocks until complete)
-		result, err := m.scraperService.ScrapeWithProgress(ctx, url, m.scrapeState.TimeoutSeconds, cb)
-
-		// Close progress channel to signal completion
-		if m.scrapeState.ProgressChan != nil {
-			close(m.scrapeState.ProgressChan)
-		}
-
+		link := m.links[m.selected]
+		updated, err := m.client.EnrichLink(
+			link.ID,
+			m.scrapeTimeoutSeconds,
+			true, // only fill empty
+		)
 		if err != nil {
-			return managelinks.ScrapeDoneMsg{Err: err}
+			return managelinks.EnrichErrorMsg{Err: err}
 		}
-		return managelinks.ScrapeDoneMsg{Result: result}
+
+		return managelinks.EnrichSuccessMsg{Link: updated}
 	}
 }
 
-// watchProgress periodically reads from the progress channel and sends updates
-func (m *manageLinksModel) watchProgress() tea.Cmd {
-	return func() tea.Msg {
-		// Read from progress channel if available
-		if m.scrapeState.ProgressChan == nil {
-			return managelinks.ProgressTickMsg{Done: true}
-		}
-		select {
-		case progress, ok := <-m.scrapeState.ProgressChan:
-			if ok {
-				// Send progress message and continue watching
-				return progress
-			}
-			// Channel closed, stop watching
-			return managelinks.ProgressTickMsg{Done: true}
-		default:
-			// No progress yet, check again soon
-			return managelinks.ProgressTickMsg{Done: false}
-		}
-	}
-}
-
-func (m *manageLinksModel) saveEnrichedLink() tea.Cmd {
-	return func() tea.Msg {
-		if m.scrapeState.Result == nil {
-			return managelinks.EnrichSavedMsg{Err: fmt.Errorf("no scrape result to apply")}
-		}
-
-		orig := m.links[m.selected]
-		update := models.LinkUpdate{}
-		changed := false
-
-		// Only fill fields that are currently empty.
-		if (orig.Title == nil || strings.TrimSpace(*orig.Title) == "") && m.scrapeState.Result.Title != "" {
-			title := m.scrapeState.Result.Title
-			update.Title = &title
-			changed = true
-		}
-
-		if (orig.Text == nil || strings.TrimSpace(*orig.Text) == "") && m.scrapeState.Result.Text != "" {
-			text := m.scrapeState.Result.Text
-			update.Text = &text
-			changed = true
-		}
-
-		if !changed {
-			// Nothing to update; return original as "updated" for display.
-			return managelinks.EnrichSavedMsg{Link: &orig, Err: nil}
-		}
-
-		updated, err := m.client.UpdateLink(orig.ID, update)
-		if err != nil {
-			return managelinks.EnrichSavedMsg{Err: err}
-		}
-
-		return managelinks.EnrichSavedMsg{Link: updated}
-	}
-}
-
-func (m *manageLinksModel) renderScraping() string {
-	return renderScrapingProgress(string(m.scrapeState.Stage), m.scrapeState.Message)
-}
-
-func (m *manageLinksModel) renderScrapeDone() string {
+func (m *manageLinksModel) renderEnrichDone() string {
 	if m.err != nil {
 		return renderErrorView(m.err)
 	}
-	if m.scrapeState.Error != nil {
-		return renderWarningView(fmt.Sprintf("Scraping failed: %v", m.scrapeState.Error))
-	}
 
-	if m.scrapeState.Updated == nil {
+	if m.enrichedLink == nil {
 		return renderEmptyState("Done. (No changes applied.)")
 	}
 
-	return renderSuccessWithDetails("Link enriched successfully!", m.scrapeState.Updated, false)
+	return renderSuccessWithDetails("Link enriched successfully!", m.enrichedLink, false)
 }

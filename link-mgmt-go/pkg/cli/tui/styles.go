@@ -99,10 +99,6 @@ func renderError(msg string) string {
 	return errorStyle.Render("❌ " + msg)
 }
 
-func renderWarning(msg string) string {
-	return warningStyle.Render("⚠️  " + msg)
-}
-
 func renderDivider(length int) string {
 	return dividerStyle.Render(strings.Repeat("─", length))
 }

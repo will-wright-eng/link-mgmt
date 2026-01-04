@@ -23,6 +23,7 @@ services:
       - "8080"
     environment:
       - DATABASE_URL=postgres://link_mgmt_user:link_mgmt_pwd@postgres:5432/link_mgmt_db?sslmode=disable
+      - SCRAPER_BASE_URL=http://scraper-dev:3000
     volumes:
       # Mount source code for hot reloading (writable so Air can create tmp files)
       - ./link-mgmt-go:/app
@@ -31,6 +32,7 @@ services:
       - /app/bin
     depends_on:
       - postgres
+      - scraper-dev
 
   # Development scraper service (with hot reloading)
   scraper-dev:

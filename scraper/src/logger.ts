@@ -32,7 +32,11 @@ export const logger = {
     console.warn(formatLogEntry(entry));
   },
 
-  error(message: string, error?: Error | unknown, meta?: Record<string, unknown>): void {
+  error(
+    message: string,
+    error?: Error | unknown,
+    meta?: Record<string, unknown>
+  ): void {
     const entry: LogEntry = {
       timestamp: new Date().toISOString(),
       level: "error",

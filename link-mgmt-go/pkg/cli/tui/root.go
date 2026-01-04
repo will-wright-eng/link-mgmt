@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"link-mgmt-go/pkg/cli/client"
-	"link-mgmt-go/pkg/scraper"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -16,9 +15,8 @@ type MenuNavigationMsg struct{}
 // It presents a simple menu and then hands control to a specific flow model.
 type rootModel struct {
 	// Shared dependencies
-	client         *client.Client
-	scraperService *scraper.ScraperService
-	scrapeTimeout  int
+	client        *client.Client
+	scrapeTimeout int
 
 	// Current active flow (when nil, we are in the main menu)
 	current tea.Model
@@ -32,7 +30,6 @@ func (m *rootModel) IsDelegating() bool {
 // NewRootModel constructs the root app-shell model that can launch multiple flows.
 func NewRootModel(
 	apiClient *client.Client,
-	scraperService *scraper.ScraperService,
 	scrapeTimeoutSeconds int,
 ) tea.Model {
 	if scrapeTimeoutSeconds <= 0 {
@@ -40,9 +37,8 @@ func NewRootModel(
 	}
 
 	root := &rootModel{
-		client:         apiClient,
-		scraperService: scraperService,
-		scrapeTimeout:  scrapeTimeoutSeconds,
+		client:        apiClient,
+		scrapeTimeout: scrapeTimeoutSeconds,
 	}
 
 	// Wrap with viewport (simple responsive, no scrolling needed for menu)
@@ -86,16 +82,16 @@ func (m *rootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "1":
-			// Enhanced add link flow with scraping from pkg/cli/tui.
-			m.current = NewAddLinkForm(m.client, m.scraperService, m.scrapeTimeout)
+			// Add link flow (scraping handled by API).
+			m.current = NewAddLinkForm(m.client, m.scrapeTimeout)
 			if initer, ok := m.current.(interface{ Init() tea.Cmd }); ok {
 				return m, initer.Init()
 			}
 			return m, nil
 
 		case "2":
-			// Combined manage links flow (list, view, delete, scrape).
-			m.current = NewManageLinksModel(m.client, m.scraperService, m.scrapeTimeout)
+			// Manage links flow (list, view, delete, enrich).
+			m.current = NewManageLinksModel(m.client, m.scrapeTimeout)
 			if initer, ok := m.current.(interface{ Init() tea.Cmd }); ok {
 				return m, initer.Init()
 			}
