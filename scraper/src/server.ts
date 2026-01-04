@@ -1,7 +1,14 @@
-import { BrowserManager } from "./browser";
-import { extractMainContent } from "./extractor";
+import { BrowserManager, extractScrapeError } from "./browser";
+import { extractMainContent, createExtractionError } from "./extractor";
 import { logger } from "./logger";
-import type { ExtractionResult } from "./types";
+import type { ExtractionResult, ScrapeResponse } from "./types";
+import {
+  categorizeError,
+  ScrapeErrorType,
+  type ScrapeError,
+  isBlockedContent,
+  createScrapeError,
+} from "./errors";
 
 let manager: BrowserManager | null = null;
 let initialized = false;
@@ -103,23 +110,58 @@ async function handleScrape(request: Request): Promise<Response> {
   const body = await parseJSON(request);
   if (!body || typeof body !== "object" || !("url" in body)) {
     logger.warn("Invalid scrape request: missing URL in body");
-    return sendJSON({ error: "URL is required" }, 400);
+    return sendJSON(
+      {
+        success: false,
+        error: "URL is required",
+        error_type: ScrapeErrorType.INVALID_URL,
+        retryable: false,
+      },
+      400
+    );
   }
 
   const { url, timeout = 10000 } = body as { url: string; timeout?: number };
 
   if (!url || typeof url !== "string") {
     logger.warn("Invalid scrape request: URL is not a string", { url });
-    return sendJSON({ error: "URL is required" }, 400);
+    return sendJSON(
+      {
+        success: false,
+        url,
+        error: "URL is required",
+        error_type: ScrapeErrorType.INVALID_URL,
+        retryable: false,
+      },
+      400
+    );
   }
 
   if (!initialized || !manager) {
+    const scrapeError: ScrapeError = {
+      type: ScrapeErrorType.BROWSER_ERROR,
+      message: "Browser not initialized",
+      retryable: true,
+      statusCode: 503,
+    };
     logger.error(
       "Scrape request received but browser not initialized",
       undefined,
-      { url }
+      {
+        url,
+        error_type: scrapeError.type,
+      }
     );
-    return sendJSON({ error: "Browser not initialized" }, 503);
+    return sendJSON(
+      {
+        success: false,
+        url,
+        error: scrapeError.message,
+        error_type: scrapeError.type,
+        retryable: scrapeError.retryable,
+      },
+      scrapeError.statusCode
+    );
   }
 
   logger.info("Starting scrape", { url, timeout });
@@ -132,17 +174,46 @@ async function handleScrape(request: Request): Promise<Response> {
     const extractionDuration = Date.now() - extractionStartTime;
 
     if (!extracted) {
+      const extractionError = createExtractionError(
+        "Failed to extract content from page"
+      );
       logger.warn("Failed to extract content", {
         url,
         extractionDuration: `${extractionDuration}ms`,
+        error_type: extractionError.type,
       });
       return sendJSON(
         {
           success: false,
           url,
-          error: "Failed to extract content",
+          error: extractionError.message,
+          error_type: extractionError.type,
+          retryable: extractionError.retryable,
         },
-        500
+        extractionError.statusCode
+      );
+    }
+
+    // Check if extracted content indicates a blocking/security message
+    if (isBlockedContent(extracted.text || "", extracted.title || "")) {
+      const blockedError = createScrapeError(
+        ScrapeErrorType.BLOCKED,
+        "Access blocked by network security"
+      );
+      logger.warn("Content indicates blocking", {
+        url,
+        error_type: blockedError.type,
+        title: extracted.title || undefined,
+      });
+      return sendJSON(
+        {
+          success: false,
+          url,
+          error: blockedError.message,
+          error_type: blockedError.type,
+          retryable: blockedError.retryable,
+        },
+        blockedError.statusCode
       );
     }
 
@@ -166,14 +237,28 @@ async function handleScrape(request: Request): Promise<Response> {
       200
     );
   } catch (error) {
-    logger.error("Scrape failed", error, { url });
+    // Try to extract categorized error if it exists
+    let scrapeError = extractScrapeError(error);
+    if (!scrapeError) {
+      // Categorize the error
+      scrapeError = categorizeError(error);
+    }
+
+    logger.error("Scrape failed", error, {
+      url,
+      error_type: scrapeError.type,
+      retryable: scrapeError.retryable,
+    });
+
     return sendJSON(
       {
         success: false,
         url,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: scrapeError.message,
+        error_type: scrapeError.type,
+        retryable: scrapeError.retryable,
       },
-      500
+      scrapeError.statusCode
     );
   }
 }
@@ -219,30 +304,82 @@ async function handleBatchScrape(request: Request): Promise<Response> {
       const extracted = await extractMainContent(html, url);
       const urlDuration = Date.now() - urlStartTime;
 
-      results.push({
-        url,
-        title: extracted?.title || "",
-        text: extracted?.text || "",
-        extracted_at: new Date().toISOString(),
-        error: extracted ? null : "Failed to extract content",
-      });
-
-      logger.debug("Batch scrape URL completed", {
-        url,
-        success: !!extracted,
-        duration: `${urlDuration}ms`,
-      });
+      if (!extracted) {
+        const extractionError = createExtractionError(
+          "Failed to extract content from page"
+        );
+        results.push({
+          url,
+          title: "",
+          text: "",
+          extracted_at: new Date().toISOString(),
+          error: extractionError.message,
+          error_type: extractionError.type,
+          retryable: extractionError.retryable,
+        });
+        logger.debug("Batch scrape URL failed extraction", {
+          url,
+          duration: `${urlDuration}ms`,
+          error_type: extractionError.type,
+        });
+      } else if (
+        isBlockedContent(extracted.text || "", extracted.title || "")
+      ) {
+        // Check if extracted content indicates blocking
+        const blockedError = createScrapeError(
+          ScrapeErrorType.BLOCKED,
+          "Access blocked by network security"
+        );
+        results.push({
+          url,
+          title: "",
+          text: "",
+          extracted_at: new Date().toISOString(),
+          error: blockedError.message,
+          error_type: blockedError.type,
+          retryable: blockedError.retryable,
+        });
+        logger.debug("Batch scrape URL blocked", {
+          url,
+          duration: `${urlDuration}ms`,
+          error_type: blockedError.type,
+        });
+      } else {
+        results.push({
+          url,
+          title: extracted.title || "",
+          text: extracted.text || "",
+          extracted_at: new Date().toISOString(),
+          error: null,
+        });
+        logger.debug("Batch scrape URL completed", {
+          url,
+          success: true,
+          duration: `${urlDuration}ms`,
+        });
+      }
     } catch (error) {
+      // Try to extract categorized error if it exists
+      let scrapeError = extractScrapeError(error);
+      if (!scrapeError) {
+        // Categorize the error
+        scrapeError = categorizeError(error);
+      }
+
       logger.warn("Batch scrape URL failed", {
         url,
-        error: error instanceof Error ? error.message : String(error),
+        error: scrapeError.message,
+        error_type: scrapeError.type,
+        retryable: scrapeError.retryable,
       });
       results.push({
         url,
         title: "",
         text: "",
         extracted_at: new Date().toISOString(),
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: scrapeError.message,
+        error_type: scrapeError.type,
+        retryable: scrapeError.retryable,
       });
     }
   }
