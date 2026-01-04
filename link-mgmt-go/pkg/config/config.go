@@ -93,6 +93,9 @@ func Load() (*Config, error) {
 		if baseURL := os.Getenv("BASE_URL"); baseURL != "" {
 			cfg.CLI.BaseURL = baseURL
 		}
+		if scraperBaseURL := os.Getenv("SCRAPER_BASE_URL"); scraperBaseURL != "" {
+			cfg.Scraper.BaseURL = scraperBaseURL
+		}
 
 		if err := Save(cfg); err != nil {
 			return nil, fmt.Errorf("failed to create default config: %w", err)
@@ -135,6 +138,9 @@ func Load() (*Config, error) {
 	// Override with environment variables if set (useful for Docker)
 	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
 		cfg.Database.URL = dbURL
+	}
+	if scraperBaseURL := os.Getenv("SCRAPER_BASE_URL"); scraperBaseURL != "" {
+		cfg.Scraper.BaseURL = scraperBaseURL
 	}
 
 	return &cfg, nil

@@ -238,9 +238,17 @@ func (w *ViewportWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if selectable, ok := w.model.(SelectableModel); ok {
 			currentSelected := selectable.GetSelectedIndex()
 			if currentSelected != w.prevSelectedIndex {
-				logger.Log("ViewportWrapper.Update: selection changed from %d to %d, scrolling to keep visible",
-					w.prevSelectedIndex, currentSelected)
-				w.scrollToSelected(selectable, currentSelected)
+				// If transitioning from list view (prevSelectedIndex >= 0) to non-list view (currentSelected == -1),
+				// reset viewport scroll position to top
+				if w.prevSelectedIndex >= 0 && currentSelected == -1 {
+					logger.Log("ViewportWrapper.Update: transitioning from list to non-list view, resetting scroll position")
+					w.viewport.SetYOffset(0)
+				} else if currentSelected >= 0 {
+					// Only scroll to selected item if we're in a list view
+					logger.Log("ViewportWrapper.Update: selection changed from %d to %d, scrolling to keep visible",
+						w.prevSelectedIndex, currentSelected)
+					w.scrollToSelected(selectable, currentSelected)
+				}
 				w.prevSelectedIndex = currentSelected
 			}
 		}

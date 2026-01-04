@@ -30,8 +30,8 @@ func main() {
 	}
 	defer database.Close()
 
-	// Initialize router
-	router := api.NewRouter(database)
+	// Initialize router (now passes config)
+	router := api.NewRouter(database, cfg)
 
 	// Create server
 	srv := &http.Server{

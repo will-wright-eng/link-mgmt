@@ -3,13 +3,25 @@ package api
 import (
 	"link-mgmt-go/pkg/api/handlers"
 	"link-mgmt-go/pkg/api/middleware"
+	"link-mgmt-go/pkg/config"
 	"link-mgmt-go/pkg/db"
+	"link-mgmt-go/pkg/scraper"
+	"link-mgmt-go/pkg/services"
 
 	"github.com/gin-gonic/gin"
 )
 
-func NewRouter(db *db.DB) *gin.Engine {
+func NewRouter(db *db.DB, cfg *config.Config) *gin.Engine {
 	router := gin.Default()
+
+	// Initialize services
+	// Use Scraper.BaseURL from config (defaults to CLI.BaseURL if not set)
+	scraperBaseURL := cfg.Scraper.BaseURL
+	if scraperBaseURL == "" {
+		scraperBaseURL = cfg.CLI.BaseURL
+	}
+	scraperService := scraper.NewScraperService(scraperBaseURL)
+	linkService := services.NewLinkService(db, scraperService)
 
 	// Middleware
 	router.Use(middleware.RequestLogger())
@@ -25,11 +37,13 @@ func NewRouter(db *db.DB) *gin.Engine {
 		links := v1.Group("/links")
 		links.Use(middleware.RequireAuth(db))
 		{
-			links.GET("", handlers.ListLinks(db))
-			links.POST("", handlers.CreateLink(db))
-			links.GET("/:id", handlers.GetLink(db))
-			links.PUT("/:id", handlers.UpdateLink(db))
-			links.DELETE("/:id", handlers.DeleteLink(db))
+			links.GET("", handlers.ListLinks(linkService))
+			links.POST("", handlers.CreateLink(linkService))
+			links.POST("/with-scraping", handlers.CreateLinkWithScraping(linkService))
+			links.GET("/:id", handlers.GetLink(linkService))
+			links.PUT("/:id", handlers.UpdateLink(linkService))
+			links.DELETE("/:id", handlers.DeleteLink(linkService))
+			links.POST("/:id/enrich", handlers.EnrichLink(linkService))
 		}
 
 		// Users

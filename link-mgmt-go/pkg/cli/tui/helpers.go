@@ -251,12 +251,6 @@ func handleQuitKeys(key string) bool {
 	return false
 }
 
-// renderWarningView renders a standard warning view with exit message
-func renderWarningView(message string) string {
-	return "\n" + renderWarning(message) + "\n\n" +
-		helpStyle.Render("Press any key to exit...") + "\n"
-}
-
 // renderSuccessWithDetails renders a success message with link details
 func renderSuccessWithDetails(message string, link *models.Link, includeUserID bool) string {
 	if link == nil {
@@ -273,42 +267,12 @@ func renderSuccessWithDetails(message string, link *models.Link, includeUserID b
 	return b.String()
 }
 
-// renderScrapingProgress renders a scraping progress view
-// Note: Title is rendered by the viewport wrapper header, so it's not included here
-func renderScrapingProgress(stage string, message string) string {
-	var b strings.Builder
-
-	stageLabel := stage
-	if stageLabel == "" {
-		stageLabel = "starting"
-	}
-	b.WriteString(fieldLabelStyle.Render("Stage:"))
-	b.WriteString(fmt.Sprintf(" %s\n", stageLabel))
-
-	if message != "" {
-		b.WriteString(infoStyle.Render(message))
-		b.WriteString("\n")
-	}
-
-	b.WriteString("\n")
-	b.WriteString(mutedStyle.Render("This may take a few seconds."))
-	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("Press Esc to cancel."))
-
-	return b.String()
-}
-
 // renderInlineError renders an error message inline (without full error view formatting)
 func renderInlineError(err error) string {
 	if err == nil {
 		return ""
 	}
 	return renderError(err.Error())
-}
-
-// renderInlineWarning renders a warning message inline (without full warning view formatting)
-func renderInlineWarning(message string) string {
-	return renderWarning(message)
 }
 
 // userFacingError converts structured scraper errors into friendly messages,

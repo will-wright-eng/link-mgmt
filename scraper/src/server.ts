@@ -5,6 +5,8 @@ import type { ExtractionResult } from "./types";
 
 let manager: BrowserManager | null = null;
 let initialized = false;
+let server: ReturnType<typeof Bun.serve> | null = null;
+let isShuttingDown = false;
 
 // Initialize browser on startup
 async function initBrowser() {
@@ -20,21 +22,49 @@ async function initBrowser() {
   }
 }
 
-// Graceful shutdown
-process.on("SIGTERM", async () => {
-  logger.info("SIGTERM received, shutting down gracefully");
-  if (manager) {
-    await manager.cleanup();
+// Graceful shutdown handler
+async function shutdown(signal: string) {
+  if (isShuttingDown) {
+    logger.warn(`${signal} received but shutdown already in progress`);
+    return;
   }
-  process.exit(0);
-});
+  isShuttingDown = true;
 
-process.on("SIGINT", async () => {
-  logger.info("SIGINT received, shutting down gracefully");
-  if (manager) {
-    await manager.cleanup();
+  logger.info(`${signal} received, shutting down gracefully`);
+
+  try {
+    // Stop accepting new connections
+    if (server) {
+      logger.info("Stopping HTTP server");
+      server.stop();
+    }
+
+    // Cleanup browser resources
+    if (manager) {
+      logger.info("Cleaning up browser");
+      await manager.cleanup();
+    }
+
+    logger.info("Shutdown complete");
+    process.exit(0);
+  } catch (error) {
+    logger.error("Error during shutdown", error);
+    process.exit(1);
   }
-  process.exit(0);
+}
+
+// Register signal handlers
+process.on("SIGTERM", () => {
+  shutdown("SIGTERM").catch((error) => {
+    logger.error("Error in SIGTERM handler", error);
+    process.exit(1);
+  });
+});
+process.on("SIGINT", () => {
+  shutdown("SIGINT").catch((error) => {
+    logger.error("Error in SIGINT handler", error);
+    process.exit(1);
+  });
 });
 
 // Helper to send JSON response
@@ -84,7 +114,11 @@ async function handleScrape(request: Request): Promise<Response> {
   }
 
   if (!initialized || !manager) {
-    logger.error("Scrape request received but browser not initialized", undefined, { url });
+    logger.error(
+      "Scrape request received but browser not initialized",
+      undefined,
+      { url }
+    );
     return sendJSON({ error: "Browser not initialized" }, 503);
   }
 
@@ -98,7 +132,10 @@ async function handleScrape(request: Request): Promise<Response> {
     const extractionDuration = Date.now() - extractionStartTime;
 
     if (!extracted) {
-      logger.warn("Failed to extract content", { url, extractionDuration: `${extractionDuration}ms` });
+      logger.warn("Failed to extract content", {
+        url,
+        extractionDuration: `${extractionDuration}ms`,
+      });
       return sendJSON(
         {
           success: false,
@@ -160,9 +197,13 @@ async function handleBatchScrape(request: Request): Promise<Response> {
   };
 
   if (!initialized || !manager) {
-    logger.error("Batch scrape request received but browser not initialized", undefined, {
-      urlCount: urls.length,
-    });
+    logger.error(
+      "Batch scrape request received but browser not initialized",
+      undefined,
+      {
+        urlCount: urls.length,
+      }
+    );
     return sendJSON({ error: "Browser not initialized" }, 503);
   }
 
@@ -192,7 +233,10 @@ async function handleBatchScrape(request: Request): Promise<Response> {
         duration: `${urlDuration}ms`,
       });
     } catch (error) {
-      logger.warn("Batch scrape URL failed", { url, error: error instanceof Error ? error.message : String(error) });
+      logger.warn("Batch scrape URL failed", {
+        url,
+        error: error instanceof Error ? error.message : String(error),
+      });
       results.push({
         url,
         title: "",
@@ -288,7 +332,7 @@ async function startServer() {
   await initBrowser();
 
   const port = parseInt(process.env.PORT || "3000", 10);
-  const server = Bun.serve({
+  server = Bun.serve({
     port,
     fetch: (request: Request) => logRequest(request, handleRequest),
   });
