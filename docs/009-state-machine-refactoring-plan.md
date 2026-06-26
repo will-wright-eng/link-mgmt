@@ -1,5 +1,7 @@
 # State Machine Refactoring Plan
 
+> **Status: Planned** — Not implemented. `manageLinksModel` still uses the integer step machine (`StepListLinks` in `pkg/cli/tui/managelinks/constants.go`); there is no `ViewMode`/`OperationState` or `state.go`.
+
 ## Current Problems
 
 The `manageLinksModel` uses a 7-step integer-based state machine that mixes concerns:

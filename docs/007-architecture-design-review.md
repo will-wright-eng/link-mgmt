@@ -1,5 +1,7 @@
 # Architecture Design Review
 
+> **Status: Partial** — The completed improvements are real: the service layer (`pkg/services/link_service.go`) and orchestration endpoints (`/links/with-scraping`, `/links/:id/enrich`) exist. The remaining opportunities (async job queue, caching layer, further state-machine simplification) are not implemented.
+
 ## Executive Summary
 
 This document reviews the design patterns, complexity distribution, and architectural opportunities in the link management system. The system consists of five components: PostgreSQL, Go API, Nginx reverse proxy, TypeScript/Bun scraper service, and Go CLI.

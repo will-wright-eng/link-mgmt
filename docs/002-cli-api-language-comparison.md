@@ -1,5 +1,7 @@
 # CLI + API Project Comparison: Go vs Rust vs TypeScript
 
+> **Status: Complete** — Reference/decision doc. Go was selected and implemented: `cmd/api` + `cmd/cli` share `pkg/`, with pgx for Postgres, gin for the API, and Bubble Tea for the TUI.
+
 ## Overall Suitability Matrix
 
 | Criterion | Go | Rust | TypeScript |

@@ -1,5 +1,7 @@
 # Go API + CLI Design Document
 
+> **Status: Complete** — API, CLI, and the Bubble Tea TUI (`pkg/cli/tui`) are all implemented, and a Dockerfile now exists. The inline "Not Implemented" markers below (TUI, Dockerfile) predate that work and are stale. Note actual CLI flags are `--register`/`--scrape`/`--save`/`--config-show`/`--config-set`, not `--add`/`--list`/`--delete`.
+
 > **Implementation Status**: This document has been updated with current implementation status as of the latest review. Status markers:
 >
 > - ✅ **Implemented** - Feature is complete and working
