@@ -1,5 +1,86 @@
 # State Machine Refactoring Plan
 
+> **Status: Planned — design finalized, ready to implement (decisions resolved 2026-06-26).** Not yet implemented: `manageLinksModel` still uses the integer step machine (`StepListLinks` in `pkg/cli/tui/managelinks/constants.go`); there is no `ViewMode`/`OperationState` or `state.go`. The open forks below have been resolved — see **Resolved Design**.
+
+## Resolved Design (authoritative)
+
+This section supersedes the exploratory "Proposed Solution", "Alternative: Option B", and the inconsistent struct definitions further down, which are kept only as background.
+
+**Decisions**
+
+- **Approach A** — a single `State` value with transition methods, defined in `pkg/cli/tui/managelinks/state.go`. The model holds **one** `state managelinks.State` (no separate `StateMachine` wrapper — that duplication is what made the original Phase-3 snippet desync `m.state` and `m.stateMachine`).
+- **Scope**: `manageLinksModel` only. `form_add_link.go` keeps its own step machine for now.
+- **Tests**: add `managelinks/state_test.go` (first tests in the repo).
+
+**Canonical state** (resolves the conflicting definitions):
+
+```go
+// pkg/cli/tui/managelinks/state.go
+type ViewMode int
+const (
+    ViewList ViewMode = iota
+    ViewActionMenu
+    ViewDetails
+    ViewDeleteConfirm
+)
+
+type OperationState int
+const (
+    OpIdle OperationState = iota
+    OpEnriching
+    OpDeleting
+)
+
+type OpResult struct {
+    Kind    OperationState // OpEnriching | OpDeleting (which op produced this)
+    Success bool
+    Link    *models.Link   // set on successful enrich; nil otherwise
+    Err     error
+}
+
+type State struct {
+    View   ViewMode
+    Op     OperationState
+    Result *OpResult
+}
+
+func (s *State) ToView(v ViewMode)       { s.View = v; s.Op = OpIdle; s.Result = nil }
+func (s *State) Start(op OperationState) { s.Op = op; s.Result = nil }
+func (s *State) Complete(r *OpResult)    { s.Op = OpIdle; s.Result = r }
+```
+
+**Transition rules**
+
+| From | Trigger | Effect |
+|------|---------|--------|
+| ViewList | `enter` | `ToView(ViewActionMenu)` |
+| ViewActionMenu | `1`/`v` | `ToView(ViewDetails)` |
+| ViewActionMenu | `2`/`d` | `ToView(ViewDeleteConfirm)` + focus confirm |
+| ViewActionMenu | `3`/`s` | `Start(OpEnriching)` + `enrichLink()` |
+| ViewActionMenu | `esc`/`b` | `ToView(ViewList)` |
+| ViewDetails | `esc`/`b`/`enter` | `ToView(ViewActionMenu)` |
+| ViewDeleteConfirm | `enter`+`y` | `Start(OpDeleting)` + `deleteLink()` |
+| ViewDeleteConfirm | `esc` | `ToView(ViewActionMenu)` |
+| (op in flight) | `EnrichSuccessMsg` | `Complete{OpEnriching, Success, Link}`; reload links; View stays `ViewActionMenu` |
+| (op in flight) | `EnrichErrorMsg` | `Complete{OpEnriching, err}`; View stays `ViewActionMenu` |
+| (op in flight) | `DeleteSuccessMsg` | reload links; `ToView(ViewList)`; **clamp `selected` to new len** |
+| (op in flight) | `DeleteErrorMsg` | `Complete{OpDeleting, err}`; View → `ViewList` |
+| Result shown | any key | clear `Result` (stay in current View) |
+
+**Behavior changes from current code** (intentional, per decisions):
+
+- **Delete success no longer quits the flow** — it returns to the (reloaded) list. Removes `StepDone`.
+- **Delete error no longer quits** — it surfaces inline as an `OpResult` error, then returns to the list. (Today `DeleteErrorMsg` calls `tea.Quit`.)
+- **The fake enrich "cancel" is removed.** Today `esc` during `StepEnriching` jumps to the action menu while the API call is still running, and the late `EnrichSuccessMsg` overrides it. New rule: while `Op != OpIdle`, ignore all keys except quit; the operation completes and shows its result.
+
+**Rendering** — keep today's **full-screen replacement** (no true overlays). `View()` order: not-ready → loading; non-op `err` → error view; `Op != OpIdle` → operation loading screen; `Result != nil` → result screen (reuse `renderEnrichDone`/`renderSuccessView`); else `switch state.View`. The `renderWithOperationOverlay`/`overlayLoading` helpers from the sketch are **not** needed.
+
+**Don't forget the `SelectableModel` coupling** (omitted from the original plan): `GetSelectedIndex` and `GetListHeaderHeight` must gate on `state.View == ViewList && state.Op == OpIdle && state.Result == nil` instead of `step == StepListLinks`.
+
+**Tests** (`managelinks/state_test.go`): table-driven over `State` methods — `list→action→details→back`, enrich start→success/error result, delete start→success (post-state = `ViewList`)→error, and that `Start`/`Complete` clear `Result` correctly.
+
+---
+
 ## Current Problems
 
 The `manageLinksModel` uses a 7-step integer-based state machine that mixes concerns:

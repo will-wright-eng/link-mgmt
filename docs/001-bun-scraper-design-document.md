@@ -1,5 +1,7 @@
 # Web Scraper CLI Tool - Design Document
 
+> **Status: Partial** — Content extraction (Playwright + Mozilla Readability) is implemented in `scraper/src` (`browser.ts`, `extractor.ts`), but as an HTTP service (`server.ts`), not the standalone CLI tool described here. The `cli.ts`/`output.ts` files, stdin/file input, and `--input`/`--output`/`--format` flags do not exist; the "Phase 3" HTTP API became the actual interface.
+
 ## Overview
 
 A command-line tool that extracts main body text from URLs using headless browser rendering and readability algorithms. Built with Bun for fast execution and minimal overhead.

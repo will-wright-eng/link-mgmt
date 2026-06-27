@@ -1,3 +1,7 @@
+# Embedding TypeScript in a Go App
+
+> **Status: Planned** — Exploratory notes only; not adopted. The scraper is not embedded in the Go binary (no `go:embed` anywhere in `link-mgmt`); it runs as a separate Dockerized Bun service reached through nginx.
+
 ## 1. **Embed the compiled JavaScript binary**
 
 Compile your TypeScript to a standalone executable (using Bun, Deno, or Node with pkg/nexe), then embed it:

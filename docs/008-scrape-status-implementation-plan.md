@@ -1,5 +1,7 @@
 # Scrape Status Implementation Plan
 
+> **Status: Planned** — Not implemented. There is no `003_add_scrape_status` migration, and no `Scraped`/`ScrapeSuccessful` fields on the `Link` model or in `pkg/db/queries.go`.
+
 ## Overview
 
 Add fields to track whether a link has been scraped and whether the scrape was successful. This will help users understand the scraping state of their links and enable features like filtering, retry logic, and status reporting.

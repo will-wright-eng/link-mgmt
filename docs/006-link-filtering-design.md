@@ -1,5 +1,7 @@
 # Link Filtering Design Document
 
+> **Status: Planned** — Not implemented. The TUI has no `filterLinks`/`filterInput`/`applyFilter`, and the API/db layer has no `search` query param (no `ILIKE` filtering in `pkg/db/queries.go`).
+
 ## Overview
 
 This document outlines patterns and methods for implementing a simple string matching filter for links. The filter will search across the `url`, `title`, and `description` fields.

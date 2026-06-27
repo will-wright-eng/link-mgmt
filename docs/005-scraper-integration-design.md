@@ -1,5 +1,7 @@
 # CLI Scraper Integration Design Document
 
+> **Status: Complete** — The `--scrape <url>` CLI command (`cmd/cli/main.go`) is implemented and routes through nginx to the scraper service. Note: the companion `--add` command referenced throughout is now `--save` / the TUI.
+
 ## Overview
 
 This document details the integration of the scraper service into the Go CLI application as a separate command from link creation. The scraper service provides a standalone `--scrape` command that extracts content from URLs independently of the `--add` command.
